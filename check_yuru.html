@@ -324,7 +324,16 @@ function resetAll() {
   renderWait();
 }
 
-currentProduct ? renderProductLoaded() : renderWait();
+// URLパラメータからデータを取得して処理
+const urlParams = new URLSearchParams(window.location.search);
+const urlData = urlParams.get("d");
+if (urlData) {
+  processData(decodeURIComponent(urlData));
+} else if (currentProduct) {
+  renderProductLoaded();
+} else {
+  renderWait();
+}
 </script>
 </body>
 </html>
