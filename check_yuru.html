@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>原料照合チェック</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;700;900&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --green: #2d6a4f;
+    --green-light: #52b788;
+    --green-pale: #d8f3dc;
+    --red: #c1121f;
+    --red-pale: #ffe8e8;
+    --blue: #1a5276;
+    --blue-pale: #eaf0fb;
+    --bg: #f4f1eb;
+    --surface: #ffffff;
+    --text: #1a1a1a;
+    --muted: #888;
+    --border: #e0dbd0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans JP', sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    padding: 20px 16px;
+  }
+
+  /* ヘッダー */
+  .header {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  .header-brand {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .header-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--green);
+  }
+
+  /* 製品カード */
+  .product-card {
+    background: var(--blue);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .product-icon {
+    width: 44px;
+    height: 44px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+
+  .product-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: white;
+  }
+
+  .product-sub {
+    font-size: 12px;
+    color: rgba(255,255,255,0.7);
+    margin-top: 2px;
+  }
+
+  /* 待機カード */
+  .wait-card {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 24px;
+    text-align: center;
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .wait-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    animation: breathe 2s ease-in-out infinite;
+  }
+
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+
+  .wait-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .wait-sub { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  /* 結果カード */
+  .result-card {
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 16px;
+    animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes popIn {
+    0% { transform: scale(0.85); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .result-card.ok { background: var(--green); color: white; }
+  .result-card.error {
+    background: var(--red); color: white;
+    animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), shake 0.5s ease 0.4s;
+  }
+  .result-card.loaded { background: var(--blue); color: white; }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-8px); }
+    40% { transform: translateX(8px); }
+    60% { transform: translateX(-6px); }
+    80% { transform: translateX(6px); }
+  }
+
+  .result-icon { font-size: 56px; margin-bottom: 12px; display: block; }
+  .result-title { font-size: 26px; font-weight: 900; margin-bottom: 6px; }
+  .result-name { font-size: 18px; font-weight: 700; opacity: 0.9; margin-bottom: 4px; }
+  .result-msg { font-size: 14px; opacity: 0.8; margin-top: 8px; line-height: 1.5; }
+
+  /* 必要量カード */
+  .amount-card {
+    background: var(--green-pale);
+    border-radius: 14px;
+    padding: 16px;
+    border: 1.5px solid var(--green-light);
+    margin-bottom: 16px;
+    text-align: center;
+  }
+
+  .amount-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: 0.1em;
+    margin-bottom: 4px;
+  }
+
+  .amount-value {
+    font-size: 40px;
+    font-weight: 900;
+    color: var(--green);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .amount-product {
+    font-size: 12px;
+    color: var(--green);
+    margin-top: 4px;
+    opacity: 0.8;
+  }
+
+  /* 詳細カード */
+  .detail-card {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .detail-row:last-child { border-bottom: none; }
+  .detail-label { color: var(--muted); }
+  .detail-value { font-weight: 500; color: var(--text); font-family: 'DM Mono', monospace; }
+
+  /* 進捗 */
+  .progress-card {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .progress-bar {
+    height: 8px;
+    background: var(--border);
+    border-radius: 99px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green-light), var(--green));
+    border-radius: 99px;
+    transition: width 0.5s ease;
+  }
+
+  .ingredient-list { display: flex; flex-direction: column; gap: 6px; }
+
+  .ingredient-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border-radius: 8px;
+    border: 1.5px solid var(--border);
+    font-size: 12px;
+    transition: all 0.3s;
+  }
+
+  .ingredient-item.checked {
+    background: var(--green-pale);
+    border-color: var(--green-light);
+  }
+
+  .ingredient-check {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    flex-shrink: 0;
+    color: var(--muted);
+  }
+
+  .ingredient-item.checked .ingredient-check {
+    background: var(--green);
+    color: white;
+  }
+
+  .ingredient-info { flex: 1; }
+  .ingredient-name { font-weight: 500; color: var(--text); }
+  .ingredient-amount { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; }
+
+  /* ログ */
+  .log-card {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .log-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .log-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  .log-item:last-child { border-bottom: none; }
+
+  .log-badge {
+    padding: 2px 7px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .log-badge.ok { background: var(--green-pale); color: var(--green); }
+  .log-badge.ng { background: var(--red-pale); color: var(--red); }
+
+  .log-text { flex: 1; color: var(--text); }
+  .log-time { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 11px; }
+
+  .empty-log { text-align: center; color: var(--muted); font-size: 13px; padding: 12px; }
+
+  /* 完了バナー */
+  .complete-banner {
+    background: var(--green);
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 16px;
+    animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .complete-banner .big { font-size: 48px; margin-bottom: 8px; }
+  .complete-banner h2 { font-size: 20px; font-weight: 900; color: white; }
+  .complete-banner p { font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px; }
+
+  /* 警告 */
+  .warn-card {
+    background: #fff8e1;
+    border: 1.5px solid #f9a825;
+    border-radius: 14px;
+    padding: 20px;
+    text-align: center;
+    margin-bottom: 16px;
+    animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .warn-icon { font-size: 40px; margin-bottom: 8px; }
+  .warn-text { font-size: 15px; font-weight: 700; color: #e65100; }
+  .warn-sub { font-size: 12px; color: #888; margin-top: 4px; }
+
+  /* ボタン */
+  .btn-reset {
+    width: 100%;
+    padding: 14px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    font-size: 14px;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    margin-bottom: 8px;
+  }
+
+  .btn-reset:active { background: var(--border); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-brand">原料照合システム</div>
+  <div class="header-title">ユルナチュール 製造管理</div>
+</div>
+
+<div id="app"></div>
+
+<script>
+// ===== 製品マスタ =====
+const PRODUCTS = {
+  'CP0727': {
+    name: 'ユルナチュール',
+    ingredients: {
+      '00135': { name: 'スクワラン',    shelf: '1-1-3-2', amount: '13,800g' },
+      '00223': { name: '精製ホホバ油',  shelf: '1-1-4-3', amount: '9,130.77g' },
+      '00893': { name: 'ウコン油',      shelf: '1-2-1-6', amount: '23g' },
+      '00894': { name: 'ウコンS',       shelf: '1-2-1-7', amount: '0.23g' },
+      '00082': { name: 'カロットオイル','shelf': '1-12',   amount: '46g' },
+    }
+  }
+};
+
+let currentProduct = JSON.parse(sessionStorage.getItem('cp') || 'null');
+let checkedCodes   = JSON.parse(sessionStorage.getItem('cc') || '[]');
+let logs           = JSON.parse(sessionStorage.getItem('lg') || '[]');
+
+function save() {
+  sessionStorage.setItem('cp', JSON.stringify(currentProduct));
+  sessionStorage.setItem('cc', JSON.stringify(checkedCodes));
+  sessionStorage.setItem('lg', JSON.stringify(logs));
+}
+
+function getParams() {
+  return new URLSearchParams(window.location.search).get('d') || '';
+}
+
+function processData(raw) {
+  if (!raw) { renderWait(); return; }
+
+  // 製造指示書スキャン
+  // フォーマット: 商品コード：CP0727,商品名：ユルナチュール,00135:スクワラン:13800,...
+  if (raw.includes('商品コード：')) {
+    const parts = raw.split(',');
+    const codeMatch = parts[0].match(/商品コード：(.+)/);
+    const nameMatch = parts[1]?.match(/商品名：(.+)/);
+    if (!codeMatch) { renderWait(); return; }
+
+    const productCode = codeMatch[1].trim();
+    const productName = nameMatch ? nameMatch[1].trim() : productCode;
+
+    if (!PRODUCTS[productCode]) {
+      renderError('不明な製品', productCode, '製品マスタに登録されていません');
+      return;
+    }
+
+    currentProduct = { code: productCode, name: productName };
+    checkedCodes = [];
+    logs = [];
+    save();
+    renderProductLoaded();
+    return;
+  }
+
+  // 原料スキャン
+  // フォーマット: OPコード：00135,原料名：スクワラン,棚番：1-1-3-2
+  if (raw.includes('OPコード：')) {
+    if (!currentProduct) { renderNoProduct(); return; }
+
+    const codeMatch = raw.match(/OPコード：(\w+)/);
+    const nameMatch = raw.match(/原料名：([^,]+)/);
+    const shelfMatch = raw.match(/棚番：([^,]+)/);
+
+    const ingCode = codeMatch ? codeMatch[1].trim() : '';
+    const ingName = nameMatch ? nameMatch[1].trim() : ingCode;
+    const shelf   = shelfMatch ? shelfMatch[1].trim() : '-';
+
+    const product = PRODUCTS[currentProduct.code];
+    const found   = product?.ingredients[ingCode];
+    const time    = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    if (found) {
+      const alreadyChecked = checkedCodes.includes(ingCode);
+      if (!alreadyChecked) {
+        checkedCodes.push(ingCode);
+      }
+      logs.unshift({ result: 'ok', name: ingName, code: ingCode, time });
+      save();
+      renderOK(ingName, ingCode, shelf, found.amount, alreadyChecked);
+    } else {
+      logs.unshift({ result: 'ng', name: ingName, code: ingCode, time });
+      save();
+      renderErrorIngredient(ingName, ingCode, currentProduct.name);
+    }
+    return;
+  }
+
+  renderWait();
+}
+
+// ===== 画面描画 =====
+
+function renderWait() {
+  document.getElementById('app').innerHTML = `
+    <div class="wait-card">
+      <div class="wait-icon">📋</div>
+      <div class="wait-title">製造指示書をスキャンしてください</div>
+      <div class="wait-sub">まず製造指示書のQRコードを読み取ってください<br>次に原料のQRコードをスキャンします</div>
+    </div>
+    ${renderLog()}
+  `;
+}
+
+function renderProductLoaded() {
+  const product = PRODUCTS[currentProduct.code];
+  const total = Object.keys(product.ingredients).length;
+  document.getElementById('app').innerHTML = `
+    <div class="result-card loaded">
+      <span class="result-icon">📋</span>
+      <div class="result-title">製造指示書を読み込みました</div>
+      <div class="result-name">${currentProduct.name}</div>
+      <div class="result-msg">原料 ${total}種類が登録されました<br>次に原料をスキャンしてください</div>
+    </div>
+    ${renderProductCard()}
+    ${renderProgress()}
+    ${renderLog()}
+    <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+  `;
+}
+
+function renderOK(name, code, shelf, amount, alreadyChecked) {
+  const product = PRODUCTS[currentProduct.code];
+  const total = Object.keys(product.ingredients).length;
+  const isComplete = checkedCodes.length === total;
+
+  if (isComplete) {
+    document.getElementById('app').innerHTML = `
+      <div class="complete-banner">
+        <div class="big">🎉</div>
+        <h2>全原料の照合が完了しました！</h2>
+        <p>${total}/${total} 原料すべて合格 — 製造を開始できます</p>
+      </div>
+      ${renderProductCard()}
+      ${renderProgress()}
+      ${renderLog()}
+      <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+    `;
+    return;
+  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="result-card ok">
+      <span class="result-icon">${alreadyChecked ? '✅' : '✅'}</span>
+      <div class="result-title">${alreadyChecked ? '照合済み' : 'OK！'}</div>
+      <div class="result-name">${name}</div>
+      <div class="result-msg">${alreadyChecked ? 'この原料はすでに照合済みです' : '正しい原料です'}</div>
+    </div>
+    <div class="amount-card">
+      <div class="amount-label">必要量（${currentProduct.name}用）</div>
+      <div class="amount-value">${amount}</div>
+    </div>
+    <div class="detail-card">
+      <div class="detail-row">
+        <span class="detail-label">OPコード</span>
+        <span class="detail-value">${code}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">棚番</span>
+        <span class="detail-value">${shelf}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">製品</span>
+        <span class="detail-value">${currentProduct.name}</span>
+      </div>
+    </div>
+    ${renderProductCard()}
+    ${renderProgress()}
+    ${renderLog()}
+    <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+  `;
+}
+
+function renderErrorIngredient(name, code, productName) {
+  document.getElementById('app').innerHTML = `
+    <div class="result-card error">
+      <span class="result-icon">❌</span>
+      <div class="result-title">エラー！</div>
+      <div class="result-name">${name}（${code}）</div>
+      <div class="result-msg">「${productName}」に使用する原料ではありません<br>正しい原料を確認してください</div>
+    </div>
+    ${renderProductCard()}
+    ${renderProgress()}
+    ${renderLog()}
+    <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+  `;
+}
+
+function renderNoProduct() {
+  document.getElementById('app').innerHTML = `
+    <div class="warn-card">
+      <div class="warn-icon">⚠️</div>
+      <div class="warn-text">先に製造指示書をスキャンしてください</div>
+      <div class="warn-sub">製品のQRコードを先に読み取ってください</div>
+    </div>
+    <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+  `;
+}
+
+function renderProductCard() {
+  if (!currentProduct) return '';
+  const product = PRODUCTS[currentProduct.code];
+  const total = Object.keys(product.ingredients).length;
+  return `
+    <div class="product-card">
+      <div class="product-icon">🧴</div>
+      <div>
+        <div class="product-name">${currentProduct.name}</div>
+        <div class="product-sub">${currentProduct.code} ／ 原料 ${total}種類</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderProgress() {
+  if (!currentProduct) return '';
+  const product = PRODUCTS[currentProduct.code];
+  const ingredients = product.ingredients;
+  const total = Object.keys(ingredients).length;
+  const count = checkedCodes.length;
+  const pct = Math.round((count / total) * 100);
+
+  const items = Object.entries(ingredients).map(([code, ing]) => {
+    const checked = checkedCodes.includes(code);
+    return `
+      <div class="ingredient-item ${checked ? 'checked' : ''}">
+        <div class="ingredient-check">${checked ? '✓' : ''}</div>
+        <div class="ingredient-info">
+          <div class="ingredient-name">${ing.name}</div>
+          <div class="ingredient-amount">${ing.amount} ／ 棚：${ing.shelf}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="progress-card">
+      <div class="progress-header">
+        <span>照合進捗</span>
+        <span>${count} / ${total}</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:${pct}%"></div>
+      </div>
+      <div class="ingredient-list">${items}</div>
+    </div>
+  `;
+}
+
+function renderLog() {
+  if (logs.length === 0) return `
+    <div class="log-card">
+      <div class="log-title">スキャン記録</div>
+      <div class="empty-log">まだ記録がありません</div>
+    </div>
+  `;
+  return `
+    <div class="log-card">
+      <div class="log-title">スキャン記録</div>
+      ${logs.map(l => `
+        <div class="log-item">
+          <div class="log-badge ${l.result}">${l.result === 'ok' ? 'OK' : 'NG'}</div>
+          <div class="log-text">${l.name}（${l.code}）</div>
+          <div class="log-time">${l.time}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function resetAll() {
+  sessionStorage.clear();
+  currentProduct = null;
+  checkedCodes = [];
+  logs = [];
+  window.location.href = window.location.pathname;
+}
+
+// 起動
+const data = getParams();
+if (data) {
+  processData(decodeURIComponent(data));
+} else if (currentProduct) {
+  renderProductLoaded();
+} else {
+  renderWait();
+}
+</script>
+</body>
+</html>
