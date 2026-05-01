@@ -115,15 +115,15 @@ const PRODUCTS = {
   }
 };
 
-let currentProduct = JSON.parse(sessionStorage.getItem('cp') || 'null');
-let checkedCodes   = JSON.parse(sessionStorage.getItem('cc') || '[]');
-let logs           = JSON.parse(sessionStorage.getItem('lg') || '[]');
+let currentProduct = JSON.parse(localStorage.getItem('cp') || 'null');
+let checkedCodes   = JSON.parse(localStorage.getItem('cc') || '[]');
+let logs           = JSON.parse(localStorage.getItem('lg') || '[]');
 let scanMode = null;
 
 function save() {
-  sessionStorage.setItem('cp', JSON.stringify(currentProduct));
-  sessionStorage.setItem('cc', JSON.stringify(checkedCodes));
-  sessionStorage.setItem('lg', JSON.stringify(logs));
+  localStorage.setItem('cp', JSON.stringify(currentProduct));
+  localStorage.setItem('cc', JSON.stringify(checkedCodes));
+  localStorage.setItem('lg', JSON.stringify(logs));
 }
 
 // カメラで撮影してQRコードを読み取る
@@ -319,7 +319,7 @@ function renderLog() {
 }
 
 function resetAll() {
-  sessionStorage.clear();
+  localStorage.clear();
   currentProduct = null; checkedCodes = []; logs = [];
   renderWait();
 }
