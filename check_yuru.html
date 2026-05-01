@@ -16,18 +16,6 @@
   .header-brand { font-size: 11px; letter-spacing: 0.2em; color: var(--muted); margin-bottom: 4px; }
   .header-title { font-size: 18px; font-weight: 700; color: var(--green); }
 
-  .btn-scan {
-    width: 100%; padding: 18px; background: var(--green); border: none; border-radius: 14px;
-    font-size: 17px; font-weight: 700; color: white; cursor: pointer; margin-bottom: 16px;
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-  }
-  .btn-scan.blue { background: var(--blue); }
-  .btn-scan:active { opacity: 0.8; }
-  .btn-reset { width: 100%; padding: 14px; background: var(--surface); border: 2px solid var(--border); border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--muted); cursor: pointer; margin-bottom: 8px; }
-
-  .card { background: var(--surface); border-radius: 14px; padding: 16px; border: 1px solid var(--border); margin-bottom: 16px; }
-  .card-title { font-size: 11px; font-weight: 700; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 12px; }
-
   .product-card { background: var(--blue); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
   .product-icon { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
   .product-name { font-size: 16px; font-weight: 700; color: white; }
@@ -36,8 +24,8 @@
   .result-card { border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 16px; animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
   @keyframes popIn { 0% { transform: scale(0.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
   .result-card.ok { background: var(--green); color: white; }
-  .result-card.error { background: var(--red); color: white; }
-  .result-card.loaded { background: var(--blue); color: white; }
+  .result-card.error { background: var(--red); color: white; animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), shake 0.5s ease 0.4s; }
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(6px); } }
   .result-icon { font-size: 52px; margin-bottom: 10px; display: block; }
   .result-title { font-size: 26px; font-weight: 900; margin-bottom: 6px; }
   .result-name { font-size: 18px; font-weight: 700; opacity: 0.9; }
@@ -47,6 +35,8 @@
   .amount-label { font-size: 11px; font-weight: 700; color: var(--green); letter-spacing: 0.1em; margin-bottom: 4px; }
   .amount-value { font-size: 40px; font-weight: 900; color: var(--green); font-family: monospace; }
 
+  .card { background: var(--surface); border-radius: 14px; padding: 16px; border: 1px solid var(--border); margin-bottom: 16px; }
+  .card-title { font-size: 11px; font-weight: 700; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 12px; }
   .detail-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .detail-row:last-child { border-bottom: none; }
   .detail-label { color: var(--muted); }
@@ -55,7 +45,6 @@
   .progress-header { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   .progress-bar { height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; margin-bottom: 12px; }
   .progress-fill { height: 100%; background: linear-gradient(90deg, var(--green-light), var(--green)); border-radius: 99px; transition: width 0.5s ease; }
-
   .ingredient-list { display: flex; flex-direction: column; gap: 6px; }
   .ingredient-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg); border-radius: 8px; border: 1.5px solid var(--border); font-size: 12px; }
   .ingredient-item.checked { background: var(--green-pale); border-color: var(--green-light); }
@@ -79,13 +68,12 @@
   .complete-banner h2 { font-size: 20px; font-weight: 900; color: white; }
   .complete-banner p { font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px; }
 
-  .warn-card { background: #fff8e1; border: 1.5px solid #f9a825; border-radius: 14px; padding: 20px; text-align: center; margin-bottom: 16px; }
-  .warn-icon { font-size: 40px; margin-bottom: 8px; }
-  .warn-text { font-size: 15px; font-weight: 700; color: #e65100; }
-  .warn-sub { font-size: 12px; color: #888; margin-top: 4px; }
+  .btn-reset { width: 100%; padding: 14px; background: var(--surface); border: 2px solid var(--border); border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--muted); cursor: pointer; margin-bottom: 8px; }
 
-  /* 隠しinput */
-  #qr-input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .wait-card { background: var(--surface); border-radius: 14px; padding: 28px; text-align: center; border: 1px solid var(--border); margin-bottom: 16px; }
+  .wait-icon { font-size: 48px; margin-bottom: 12px; }
+  .wait-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+  .wait-sub { font-size: 13px; color: var(--muted); line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -95,147 +83,69 @@
   <div class="header-title">ユルナチュール 製造管理</div>
 </div>
 
-<!-- カメラ入力（非表示） -->
-<input type="file" id="qr-input" accept="image/*" capture="environment">
-
 <div id="app"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
-const PRODUCTS = {
-  'CP0727': {
-    name: 'ユルナチュール',
-    ingredients: {
-      '00135': { name: 'スクワラン',     shelf: '1-1-3-2', amount: '13,800g' },
-      '00223': { name: '精製ホホバ油',   shelf: '1-1-4-3', amount: '9,130.77g' },
-      '00893': { name: 'ウコン油',       shelf: '1-2-1-6', amount: '23g' },
-      '00894': { name: 'ウコンS',        shelf: '1-2-1-7', amount: '0.23g' },
-      '00082': { name: 'カロットオイル', shelf: '1-12',    amount: '46g' },
-    }
+const PRODUCT = {
+  code: 'CP0727',
+  name: 'ユルナチュール',
+  ingredients: {
+    '00135': { name: 'スクワラン',     shelf: '1-1-3-2', amount: '13,800g' },
+    '00223': { name: '精製ホホバ油',   shelf: '1-1-4-3', amount: '9,130.77g' },
+    '00893': { name: 'ウコン油',       shelf: '1-2-1-6', amount: '23g' },
+    '00894': { name: 'ウコンS',        shelf: '1-2-1-7', amount: '0.23g' },
+    '00082': { name: 'カロットオイル', shelf: '1-12',    amount: '46g' },
   }
 };
 
-let currentProduct = JSON.parse(localStorage.getItem('cp') || 'null');
-let checkedCodes   = JSON.parse(localStorage.getItem('cc') || '[]');
-let logs           = JSON.parse(localStorage.getItem('lg') || '[]');
-let scanMode = null;
+// localStorageで状態を保持（タブをまたいでも保持される）
+let checkedCodes = JSON.parse(localStorage.getItem('cc') || '[]');
+let logs         = JSON.parse(localStorage.getItem('lg') || '[]');
 
 function save() {
-  localStorage.setItem('cp', JSON.stringify(currentProduct));
   localStorage.setItem('cc', JSON.stringify(checkedCodes));
   localStorage.setItem('lg', JSON.stringify(logs));
 }
 
-// カメラで撮影してQRコードを読み取る
-function openCamera(mode) {
-  scanMode = mode;
-  const input = document.getElementById('qr-input');
-  input.onchange = handleImage;
-  input.click();
-}
+// URLパラメータを処理
+function processURL() {
+  const params = new URLSearchParams(window.location.search);
+  const d = params.get('d');
+  if (!d) { renderWait(); return; }
 
-function handleImage(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    const img = new Image();
-    img.onload = function() {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height);
-      if (code) {
-        processData(code.data);
-      } else {
-        alert('QRコードが読み取れませんでした。もう一度試してください。');
-      }
-    };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-
-  // inputをリセット（同じファイルを再選択できるように）
-  e.target.value = '';
-}
-
-function processData(raw) {
-  raw = raw.trim();
-
-  // URLからdパラメータを抽出
-  if (raw.includes('http')) {
-    try {
-      const url = new URL(raw);
-      const d = url.searchParams.get('d');
-      if (d) raw = decodeURIComponent(d);
-    } catch(e) {}
-  }
-
-  // 製造指示書
-  const productCode = Object.keys(PRODUCTS).find(k => raw.includes(k));
-  if (productCode) {
-    currentProduct = { code: productCode, name: PRODUCTS[productCode].name };
-    checkedCodes = []; logs = [];
-    save(); renderProductLoaded(); return;
-  }
-
-  if (!currentProduct) { renderNoProduct(); return; }
-
-  // 原料コード抽出（5桁の数字）
-  const m = raw.match(/\d{5}/);
-  const ingCode = m ? m[0] : raw;
-
-  const product = PRODUCTS[currentProduct.code];
-  const found = product?.ingredients[ingCode];
+  const ingCode = d.trim();
+  const found = PRODUCT.ingredients[ingCode];
   const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const ingName = found ? found.name : ingCode;
 
   if (found) {
     const already = checkedCodes.includes(ingCode);
     if (!already) checkedCodes.push(ingCode);
-    logs.unshift({ result: 'ok', name: ingName, code: ingCode, time });
-    save(); renderOK(ingName, ingCode, found.shelf, found.amount, already);
+    logs.unshift({ result: 'ok', name: found.name, code: ingCode, time });
+    save();
+    renderOK(found.name, ingCode, found.shelf, found.amount, already);
   } else {
-    logs.unshift({ result: 'ng', name: ingName, code: ingCode, time });
-    save(); renderErrorIngredient(ingName, ingCode, currentProduct.name);
+    logs.unshift({ result: 'ng', name: ingCode, code: ingCode, time });
+    save();
+    renderError(ingCode);
   }
 }
 
 function renderWait() {
   document.getElementById('app').innerHTML = `
-    <div class="card" style="text-align:center;padding:28px;">
-      <div style="font-size:48px;margin-bottom:12px;">📋</div>
-      <div style="font-size:16px;font-weight:700;margin-bottom:6px;">製造指示書をスキャンしてください</div>
-      <div style="font-size:13px;color:var(--muted);">ボタンをタップしてカメラでQRコードを撮影してください</div>
+    <div class="wait-card">
+      <div class="wait-icon">🧴</div>
+      <div class="wait-title">ユルナチュール 原料照合システム</div>
+      <div class="wait-sub">原料のQRコードをカメラで読み取ってください<br>自動で照合結果が表示されます</div>
     </div>
-    <button class="btn-scan blue" onclick="openCamera('product')">📷 製造指示書をスキャン</button>
+    ${renderProductCard()}
+    ${renderProgress()}
     ${renderLog()}
-  `;
-}
-
-function renderProductLoaded() {
-  const product = PRODUCTS[currentProduct.code];
-  const total = Object.keys(product.ingredients).length;
-  document.getElementById('app').innerHTML = `
-    <div class="result-card loaded">
-      <span class="result-icon">📋</span>
-      <div class="result-title">読み込み完了！</div>
-      <div class="result-name">${currentProduct.name}</div>
-      <div class="result-msg">原料 ${total}種類が登録されました<br>次に原料をスキャンしてください</div>
-    </div>
-    <button class="btn-scan" onclick="openCamera('ingredient')">📷 原料をスキャン</button>
-    ${renderProductCard()}${renderProgress()}${renderLog()}
-    <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+    <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
   `;
 }
 
 function renderOK(name, code, shelf, amount, already) {
-  const product = PRODUCTS[currentProduct.code];
-  const total = Object.keys(product.ingredients).length;
+  const total = Object.keys(PRODUCT.ingredients).length;
   if (checkedCodes.length === total) {
     document.getElementById('app').innerHTML = `
       <div class="complete-banner">
@@ -243,8 +153,10 @@ function renderOK(name, code, shelf, amount, already) {
         <h2>全原料の照合が完了！</h2>
         <p>${total}/${total} 原料すべて合格 — 製造を開始できます</p>
       </div>
-      ${renderProductCard()}${renderProgress()}${renderLog()}
-      <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+      ${renderProductCard()}
+      ${renderProgress()}
+      ${renderLog()}
+      <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
     `;
     return;
   }
@@ -256,84 +168,93 @@ function renderOK(name, code, shelf, amount, already) {
       <div class="result-msg">${already ? 'この原料はすでに照合済みです' : '正しい原料です'}</div>
     </div>
     <div class="amount-card">
-      <div class="amount-label">必要量（${currentProduct.name}用）</div>
+      <div class="amount-label">必要量（${PRODUCT.name}用）</div>
       <div class="amount-value">${amount}</div>
     </div>
     <div class="card">
       <div class="detail-row"><span class="detail-label">OPコード</span><span class="detail-value">${code}</span></div>
       <div class="detail-row"><span class="detail-label">棚番</span><span class="detail-value">${shelf}</span></div>
     </div>
-    <button class="btn-scan" onclick="openCamera('ingredient')">📷 次の原料をスキャン</button>
-    ${renderProductCard()}${renderProgress()}${renderLog()}
-    <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+    ${renderProductCard()}
+    ${renderProgress()}
+    ${renderLog()}
+    <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
   `;
 }
 
-function renderErrorIngredient(name, code, productName) {
+function renderError(code) {
   document.getElementById('app').innerHTML = `
     <div class="result-card error">
       <span class="result-icon">❌</span>
       <div class="result-title">エラー！</div>
-      <div class="result-name">${name}（${code}）</div>
-      <div class="result-msg">「${productName}」に使用する原料ではありません</div>
+      <div class="result-name">${code}</div>
+      <div class="result-msg">「${PRODUCT.name}」に使用する原料ではありません</div>
     </div>
-    <button class="btn-scan" onclick="openCamera('ingredient')">📷 もう一度スキャン</button>
-    ${renderProductCard()}${renderProgress()}${renderLog()}
-    <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
-  `;
-}
-
-function renderNoProduct() {
-  document.getElementById('app').innerHTML = `
-    <div class="warn-card">
-      <div class="warn-icon">⚠️</div>
-      <div class="warn-text">先に製造指示書をスキャンしてください</div>
-    </div>
-    <button class="btn-scan blue" onclick="openCamera('product')">📷 製造指示書をスキャン</button>
-    <button class="btn-reset" onclick="resetAll()">🔄 最初からやり直す</button>
+    ${renderProductCard()}
+    ${renderProgress()}
+    ${renderLog()}
+    <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
   `;
 }
 
 function renderProductCard() {
-  if (!currentProduct) return '';
-  const p = PRODUCTS[currentProduct.code];
-  return `<div class="product-card"><div class="product-icon">🧴</div><div><div class="product-name">${currentProduct.name}</div><div class="product-sub">${currentProduct.code} ／ 原料 ${Object.keys(p.ingredients).length}種類</div></div></div>`;
+  const total = Object.keys(PRODUCT.ingredients).length;
+  return `
+    <div class="product-card">
+      <div class="product-icon">🧴</div>
+      <div>
+        <div class="product-name">${PRODUCT.name}</div>
+        <div class="product-sub">${PRODUCT.code} ／ 原料 ${total}種類</div>
+      </div>
+    </div>
+  `;
 }
 
 function renderProgress() {
-  if (!currentProduct) return '';
-  const ings = PRODUCTS[currentProduct.code].ingredients;
+  const ings = PRODUCT.ingredients;
   const total = Object.keys(ings).length;
   const count = checkedCodes.length;
   const pct = Math.round((count / total) * 100);
   const items = Object.entries(ings).map(([code, ing]) => {
     const checked = checkedCodes.includes(code);
-    return `<div class="ingredient-item ${checked?'checked':''}"><div class="ingredient-check">${checked?'✓':''}</div><div class="ingredient-info"><div class="ingredient-name">${ing.name}</div><div class="ingredient-amount">${ing.amount} ／ 棚：${ing.shelf}</div></div></div>`;
+    return `<div class="ingredient-item ${checked?'checked':''}">
+      <div class="ingredient-check">${checked?'✓':''}</div>
+      <div class="ingredient-info">
+        <div class="ingredient-name">${ing.name}</div>
+        <div class="ingredient-amount">${ing.amount} ／ 棚：${ing.shelf}</div>
+      </div>
+    </div>`;
   }).join('');
-  return `<div class="card"><div class="card-title">照合進捗</div><div class="progress-header"><span>進捗</span><span>${count} / ${total}</span></div><div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div><div class="ingredient-list">${items}</div></div>`;
+  return `
+    <div class="card">
+      <div class="card-title">照合進捗</div>
+      <div class="progress-header"><span>進捗</span><span>${count} / ${total}</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="ingredient-list">${items}</div>
+    </div>
+  `;
 }
 
 function renderLog() {
   if (logs.length === 0) return `<div class="card"><div class="card-title">スキャン記録</div><div class="empty-log">まだ記録がありません</div></div>`;
-  return `<div class="card"><div class="card-title">スキャン記録</div>${logs.map(l=>`<div class="log-item"><div class="log-badge ${l.result}">${l.result==='ok'?'OK':'NG'}</div><div class="log-text">${l.name}（${l.code}）</div><div class="log-time">${l.time}</div></div>`).join('')}</div>`;
+  return `<div class="card"><div class="card-title">スキャン記録</div>${logs.map(l=>`
+    <div class="log-item">
+      <div class="log-badge ${l.result}">${l.result==='ok'?'OK':'NG'}</div>
+      <div class="log-text">${l.name}（${l.code}）</div>
+      <div class="log-time">${l.time}</div>
+    </div>`).join('')}</div>`;
 }
 
 function resetAll() {
-  localStorage.clear();
-  currentProduct = null; checkedCodes = []; logs = [];
-  renderWait();
+  localStorage.removeItem('cc');
+  localStorage.removeItem('lg');
+  checkedCodes = []; logs = [];
+  // URLパラメータを消してリセット
+  window.location.href = window.location.pathname;
 }
 
-// URLパラメータからデータを取得して処理
-const urlParams = new URLSearchParams(window.location.search);
-const urlData = urlParams.get("d");
-if (urlData) {
-  processData(decodeURIComponent(urlData));
-} else if (currentProduct) {
-  renderProductLoaded();
-} else {
-  renderWait();
-}
+// 起動
+processURL();
 </script>
 </body>
 </html>
