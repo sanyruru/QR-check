@@ -378,6 +378,19 @@ function renderLog() {
     </div>`).join('')}</div>`;
 }
 
+function completeMeasure(code, name) {
+  const measuredCodes = JSON.parse(localStorage.getItem('mc') || '[]');
+  if (!measuredCodes.includes(code)) {
+    measuredCodes.push(code);
+    localStorage.setItem('mc', JSON.stringify(measuredCodes));
+  }
+  // 計量完了ログを追加
+  const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  logs.unshift({ result: 'ok', name: '⚖️ ' + name + ' 計量完了', code: code, time });
+  save();
+  renderWait();
+}
+
 function goToStart() {
   // 記録リセットして製造指示書スキャン待機画面に戻る
   localStorage.removeItem('cc');
