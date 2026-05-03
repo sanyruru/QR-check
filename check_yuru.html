@@ -108,6 +108,67 @@ function save() {
 }
 
 // URLパラメータを処理
+
+// ===== 音の設定 =====
+function playOK() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(880, ctx.currentTime);
+  osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+  gain.gain.setValueAtTime(0.3, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.3);
+}
+
+function playError() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(220, ctx.currentTime);
+  osc.frequency.setValueAtTime(150, ctx.currentTime + 0.2);
+  gain.gain.setValueAtTime(0.4, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.5);
+}
+
+function playLoaded() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(660, ctx.currentTime);
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.2);
+}
+
+function playComplete() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  [523, 659, 784, 1047].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.12);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.2);
+    osc.start(ctx.currentTime + i * 0.12);
+    osc.stop(ctx.currentTime + i * 0.12 + 0.2);
+  });
+}
 function processURL() {
   const params = new URLSearchParams(window.location.search);
   const d = params.get('d');
@@ -118,6 +179,7 @@ function processURL() {
   // 製造指示書QRコード（製品コード）の場合
   if (code === PRODUCT.code) {
     localStorage.setItem('cp', JSON.stringify({ code: PRODUCT.code, name: PRODUCT.name }));
+    playLoaded();
     renderProductLoaded();
     return;
   }
@@ -139,10 +201,12 @@ function processURL() {
     if (!already) checkedCodes.push(ingCode);
     logs.unshift({ result: 'ok', name: found.name, code: ingCode, time });
     save();
+    playOK();
     renderOK(found.name, ingCode, found.shelf, found.amount, already);
   } else {
     logs.unshift({ result: 'ng', name: ingCode, code: ingCode, time });
     save();
+    playError();
     renderError(ingCode);
   }
 }
@@ -182,6 +246,7 @@ function renderWait() {
 function renderOK(name, code, shelf, amount, already) {
   const total = Object.keys(PRODUCT.ingredients).length;
   if (checkedCodes.length === total) {
+    playComplete();
     document.getElementById('app').innerHTML = `
       <div class="complete-banner">
         <div class="big">🎉</div>
