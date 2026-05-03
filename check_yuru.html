@@ -111,19 +111,19 @@ function save() {
 
 // ===== 音の設定 =====
 function vibrateOK() {
-  if (navigator.vibrate) navigator.vibrate(100); // 短くブルッ！
+  localStorage.setItem("vib", "ok");
 }
 
 function vibrateError() {
-  if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]); // ブルブルブル！
+  localStorage.setItem("vib", "error");
 }
 
 function vibrateLoaded() {
-  if (navigator.vibrate) navigator.vibrate(50); // ポッ
+  localStorage.setItem("vib", "loaded");
 }
 
 function vibrateComplete() {
-  if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 300]); // 完了！
+  localStorage.setItem("vib", "complete");
 }
 
 function playOK() {
@@ -404,14 +404,29 @@ const hasCp = localStorage.getItem('cp');
 
 if (hasD) {
   // QRコードからアクセスした場合
+  // 結果をlocalStorageに一時保存してページ遷移後に表示
+  const result = localStorage.getItem('last_result');
   processURL();
 } else if (hasCp) {
-  // 製造指示書スキャン済みの場合は原料照合画面
   renderWait();
 } else {
-  // 未スキャンの場合は製造指示書スキャン画面
   renderProductScan();
 }
+
+// ページ読み込み完了後にバイブレーション
+window.addEventListener('load', function() {
+  const vib = localStorage.getItem('vib');
+  if (vib === 'ok') {
+    setTimeout(() => { if (navigator.vibrate) navigator.vibrate(100); }, 300);
+  } else if (vib === 'error') {
+    setTimeout(() => { if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]); }, 300);
+  } else if (vib === 'loaded') {
+    setTimeout(() => { if (navigator.vibrate) navigator.vibrate(50); }, 300);
+  } else if (vib === 'complete') {
+    setTimeout(() => { if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 300]); }, 300);
+  }
+  localStorage.removeItem('vib');
+});
 </script>
 </body>
 </html>
