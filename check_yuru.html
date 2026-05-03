@@ -398,7 +398,20 @@ function renderProductScan() {
 }
 
 // 起動
-processURL();
+const urlParams = new URLSearchParams(window.location.search);
+const hasD = urlParams.get('d');
+const hasCp = localStorage.getItem('cp');
+
+if (hasD) {
+  // QRコードからアクセスした場合
+  processURL();
+} else if (hasCp) {
+  // 製造指示書スキャン済みの場合は原料照合画面
+  renderWait();
+} else {
+  // 未スキャンの場合は製造指示書スキャン画面
+  renderProductScan();
+}
 </script>
 </body>
 </html>
