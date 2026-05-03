@@ -308,6 +308,12 @@ function renderOK(name, code, shelf, amount, already) {
       <div class="detail-row"><span class="detail-label">OPコード</span><span class="detail-value">${code}</span></div>
       <div class="detail-row"><span class="detail-label">棚番</span><span class="detail-value">${shelf}</span></div>
     </div>
+    ${(() => {
+      const mc = JSON.parse(localStorage.getItem('mc') || '[]');
+      return mc.includes(code) ? 
+        '<div style="background:#d8f3dc;border:1.5px solid #52b788;border-radius:14px;padding:16px;text-align:center;margin-bottom:16px;font-weight:700;color:#2d6a4f;">⚖️ 計量完了済み</div>' :
+        '<button style="width:100%;padding:18px;background:#2d6a4f;border:none;border-radius:14px;font-size:17px;font-weight:700;color:white;cursor:pointer;margin-bottom:16px;" onclick="completeMeasure(\'' + code + '\', \'' + name + '\')">⚖️ 計量完了</button>';
+    })()}
     ${renderProductCard()}
     ${renderProgress()}
     ${renderLog()}
