@@ -110,6 +110,22 @@ function save() {
 // URLパラメータを処理
 
 // ===== 音の設定 =====
+function vibrateOK() {
+  if (navigator.vibrate) navigator.vibrate(100); // 短くブルッ！
+}
+
+function vibrateError() {
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]); // ブルブルブル！
+}
+
+function vibrateLoaded() {
+  if (navigator.vibrate) navigator.vibrate(50); // ポッ
+}
+
+function vibrateComplete() {
+  if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 300]); // 完了！
+}
+
 function playOK() {
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   const osc = ctx.createOscillator();
@@ -179,7 +195,7 @@ function processURL() {
   // 製造指示書QRコード（製品コード）の場合
   if (code === PRODUCT.code) {
     localStorage.setItem('cp', JSON.stringify({ code: PRODUCT.code, name: PRODUCT.name }));
-    playLoaded();
+    playLoaded(); vibrateLoaded();
     renderProductLoaded();
     return;
   }
@@ -201,12 +217,12 @@ function processURL() {
     if (!already) checkedCodes.push(ingCode);
     logs.unshift({ result: 'ok', name: found.name, code: ingCode, time });
     save();
-    playOK();
+    playOK(); vibrateOK();
     renderOK(found.name, ingCode, found.shelf, found.amount, already);
   } else {
     logs.unshift({ result: 'ng', name: ingCode, code: ingCode, time });
     save();
-    playError();
+    playError(); vibrateError();
     renderError(ingCode);
   }
 }
@@ -246,7 +262,7 @@ function renderWait() {
 function renderOK(name, code, shelf, amount, already) {
   const total = Object.keys(PRODUCT.ingredients).length;
   if (checkedCodes.length === total) {
-    playComplete();
+    playComplete(); vibrateComplete();
     document.getElementById('app').innerHTML = `
       <div class="complete-banner">
         <div class="big">🎉</div>
