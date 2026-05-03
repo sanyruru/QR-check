@@ -113,7 +113,24 @@ function processURL() {
   const d = params.get('d');
   if (!d) { renderWait(); return; }
 
-  const ingCode = d.trim();
+  const code = d.trim();
+
+  // 製造指示書QRコード（製品コード）の場合
+  if (code === PRODUCT.code) {
+    localStorage.setItem('cp', JSON.stringify({ code: PRODUCT.code, name: PRODUCT.name }));
+    renderProductLoaded();
+    return;
+  }
+
+  // 製造指示書スキャン済みか確認
+  const cp = JSON.parse(localStorage.getItem('cp') || 'null');
+  if (!cp) {
+    renderProductScan();
+    return;
+  }
+
+  // 原料QRコードの処理
+  const ingCode = code;
   const found = PRODUCT.ingredients[ingCode];
   const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -128,6 +145,23 @@ function processURL() {
     save();
     renderError(ingCode);
   }
+}
+
+function renderProductLoaded() {
+  const total = Object.keys(PRODUCT.ingredients).length;
+  document.getElementById('app').innerHTML = `
+    <div class="result-card loaded" style="background:var(--blue);color:white;border-radius:16px;padding:24px;text-align:center;margin-bottom:16px;">
+      <span style="font-size:52px;margin-bottom:10px;display:block;">📋</span>
+      <div style="font-size:26px;font-weight:900;margin-bottom:6px;">読み込み完了！</div>
+      <div style="font-size:18px;font-weight:700;opacity:0.9;">${PRODUCT.name}</div>
+      <div style="font-size:14px;opacity:0.8;margin-top:8px;">原料 ${total}種類が登録されました<br>次に原料をスキャンしてください</div>
+    </div>
+    ${renderProductCard()}
+    ${renderProgress()}
+    ${renderLog()}
+    <button class="btn-reset" onclick="goToStart()">↩️ 最初からやり直す</button>
+    <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
+  `;
 }
 
 function renderWait() {
