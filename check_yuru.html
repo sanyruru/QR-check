@@ -231,21 +231,6 @@ function processURL() {
 
   if (found) {
     const already = checkedCodes.includes(ingCode);
-    // 前の原料の計量完了チェック
-    const measuredCodes = JSON.parse(localStorage.getItem('mc') || '[]');
-    const lastChecked = checkedCodes[checkedCodes.length - 1];
-    if (lastChecked && lastChecked !== ingCode && !measuredCodes.includes(lastChecked)) {
-      const lastIng = PRODUCT.ingredients[lastChecked];
-      document.getElementById('app').innerHTML = `
-        <div style="background:#fff8e1;border:1.5px solid #f9a825;border-radius:16px;padding:24px;text-align:center;margin-bottom:16px;">
-          <div style="font-size:40px;margin-bottom:8px;">⚠️</div>
-          <div style="font-size:18px;font-weight:700;color:#e65100;margin-bottom:8px;">計量完了を押してください</div>
-          <div style="font-size:14px;color:#888;">「${lastIng ? lastIng.name : lastChecked}」の計量完了ボタンを<br>押してから次の原料をスキャンしてください</div>
-        </div>
-        <button style="width:100%;padding:18px;background:#2d6a4f;border:none;border-radius:14px;font-size:17px;font-weight:700;color:white;cursor:pointer;margin-bottom:16px;" onclick="forceMeasure('${lastChecked}')">⚖️ 計量完了して次へ</button>
-      `;
-      return;
-    }
     if (!already) checkedCodes.push(ingCode);
     logs.unshift({ result: 'ok', name: found.name, code: ingCode, time });
     save();
