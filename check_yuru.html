@@ -98,6 +98,12 @@ const PRODUCT = {
   }
 };
 
+// ユルナチュール以外の原料マスター（エラー時の表示用）
+const ALL_INGREDIENTS = {
+  '00095': { name: '濃いグリセリン', shelf: '?' },
+  '00153': { name: 'サラコス99',    shelf: '?' },
+};
+
 // localStorageで状態を保持（タブをまたいでも保持される）
 let checkedCodes = JSON.parse(localStorage.getItem('cc') || '[]');
 let logs         = JSON.parse(localStorage.getItem('lg') || '[]');
@@ -237,7 +243,9 @@ function processURL() {
     playOK(); vibrateOK();
     renderOK(found.name, ingCode, found.shelf, found.amount, already);
   } else {
-    logs.unshift({ result: 'ng', name: ingCode, code: ingCode, time });
+    const errIng = ALL_INGREDIENTS[ingCode];
+    const errName = errIng ? errIng.name : ingCode;
+    logs.unshift({ result: 'ng', name: errName, code: ingCode, time });
     save();
     playError(); vibrateError();
     renderError(ingCode);
@@ -316,12 +324,15 @@ function renderOK(name, code, shelf, amount, already) {
 }
 
 function renderError(code) {
+  const ing = ALL_INGREDIENTS[code];
+  const name = ing ? ing.name : '不明な原料';
+  const shelf = ing ? ing.shelf : '?';
   document.getElementById('app').innerHTML = `
     <div class="result-card error">
       <span class="result-icon">❌</span>
       <div class="result-title">エラー！</div>
-      <div class="result-name">${code}</div>
-      <div class="result-msg">「${PRODUCT.name}」に使用する原料ではありません</div>
+      <div class="result-name">${name}</div>
+      <div class="result-msg">OPコード：${code}<br>棚番：${shelf}<br>「${PRODUCT.name}」に使用する原料ではありません</div>
     </div>
     ${renderProductCard()}
     ${renderProgress()}
@@ -422,7 +433,6 @@ const hasCp = localStorage.getItem('cp');
 
 if (hasD) {
   // QRコードからアクセスした場合
-  // 結果をlocalStorageに一時保存してページ遷移後に表示
   const result = localStorage.getItem('last_result');
   processURL();
 } else if (hasCp) {
