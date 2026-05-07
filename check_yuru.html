@@ -9,6 +9,7 @@
     --green: #2d6a4f; --green-light: #52b788; --green-pale: #d8f3dc;
     --red: #c1121f; --red-pale: #ffe8e8; --blue: #1a5276;
     --bg: #f4f1eb; --surface: #ffffff; --text: #1a1a1a; --muted: #888; --border: #e0dbd0;
+    --orange: #e76f00;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Helvetica Neue', Arial, sans-serif; background: var(--bg); min-height: 100vh; padding: 16px; }
@@ -48,8 +49,10 @@
   .ingredient-list { display: flex; flex-direction: column; gap: 6px; }
   .ingredient-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg); border-radius: 8px; border: 1.5px solid var(--border); font-size: 12px; }
   .ingredient-item.checked { background: var(--green-pale); border-color: var(--green-light); }
+  .ingredient-item.pending { background: #fff8f0; border-color: var(--orange); }
   .ingredient-check { width: 22px; height: 22px; border-radius: 50%; background: var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; color: var(--muted); }
   .ingredient-item.checked .ingredient-check { background: var(--green); color: white; }
+  .ingredient-item.pending .ingredient-check { background: var(--orange); color: white; }
   .ingredient-info { flex: 1; }
   .ingredient-name { font-weight: 500; color: var(--text); }
   .ingredient-amount { font-size: 11px; color: var(--muted); font-family: monospace; }
@@ -68,12 +71,26 @@
   .complete-banner h2 { font-size: 20px; font-weight: 900; color: white; }
   .complete-banner p { font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px; }
 
+  .btn-complete { width: 100%; padding: 18px; background: var(--green); border: none; border-radius: 14px; font-size: 17px; font-weight: 700; color: white; cursor: pointer; margin-bottom: 8px; letter-spacing: 0.05em; }
   .btn-reset { width: 100%; padding: 14px; background: var(--surface); border: 2px solid var(--border); border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--muted); cursor: pointer; margin-bottom: 8px; }
 
   .wait-card { background: var(--surface); border-radius: 14px; padding: 28px; text-align: center; border: 1px solid var(--border); margin-bottom: 16px; }
   .wait-icon { font-size: 48px; margin-bottom: 12px; }
   .wait-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
   .wait-sub { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  .pending-card { background: #fff8f0; border: 2px solid var(--orange); border-radius: 14px; padding: 16px; margin-bottom: 16px; text-align: center; }
+  .pending-label { font-size: 13px; color: var(--orange); font-weight: 700; margin-bottom: 4px; }
+  .pending-name { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
+
+  /* 警告モーダル */
+  .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; animation: fadeIn 0.2s ease; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal { background: white; border-radius: 16px; padding: 24px; margin: 16px; text-align: center; max-width: 320px; width: 100%; }
+  .modal-icon { font-size: 48px; margin-bottom: 12px; }
+  .modal-title { font-size: 18px; font-weight: 900; color: var(--orange); margin-bottom: 8px; }
+  .modal-msg { font-size: 14px; color: var(--text); line-height: 1.6; margin-bottom: 20px; }
+  .modal-btn { width: 100%; padding: 14px; background: var(--orange); border: none; border-radius: 12px; font-size: 15px; font-weight: 700; color: white; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -84,6 +101,7 @@
 </div>
 
 <div id="app"></div>
+<div id="modal"></div>
 
 <script>
 const PRODUCT = {
@@ -98,108 +116,82 @@ const PRODUCT = {
   }
 };
 
-// ユルナチュール以外の原料マスター（エラー時の表示用）
 const ALL_INGREDIENTS = {
   '00075': { name: '濃いグリセリン', shelf: '?' },
   '00153': { name: 'サラコス99',    shelf: '?' },
 };
 
-// localStorageで状態を保持（タブをまたいでも保持される）
 let checkedCodes = JSON.parse(localStorage.getItem('cc') || '[]');
 let logs         = JSON.parse(localStorage.getItem('lg') || '[]');
+let pendingCode  = localStorage.getItem('pc') || null;
+let pendingName  = localStorage.getItem('pn') || null;
 
 function save() {
   localStorage.setItem('cc', JSON.stringify(checkedCodes));
   localStorage.setItem('lg', JSON.stringify(logs));
 }
 
-// URLパラメータを処理
+function savePending(code, name) {
+  pendingCode = code;
+  pendingName = name;
+  localStorage.setItem('pc', code);
+  localStorage.setItem('pn', name);
+}
 
-// ===== 音の設定 =====
+function clearPending() {
+  pendingCode = null;
+  pendingName = null;
+  localStorage.removeItem('pc');
+  localStorage.removeItem('pn');
+}
+
 let audioCtx = null;
 
-function initAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  // バイブレーションもテスト
-  if (navigator.vibrate) navigator.vibrate(50);
-  // ボタンを非表示
-  const btn = document.getElementById('audio-init-btn');
-  if (btn) btn.style.display = 'none';
-  // 有効化メッセージ表示
-  const msg = document.getElementById('audio-msg');
-  if (msg) { msg.textContent = '🔊 音・バイブ有効'; msg.style.color = 'var(--green)'; }
-}
-
-// ===== 音の設定（続き）=====
-function vibrateOK() {
-  localStorage.setItem("vib", "ok");
-}
-
-function vibrateError() {
-  localStorage.setItem("vib", "error");
-}
-
-function vibrateLoaded() {
-  localStorage.setItem("vib", "loaded");
-}
-
-function vibrateComplete() {
-  localStorage.setItem("vib", "complete");
-}
+function vibrateOK()       { localStorage.setItem("vib", "ok"); }
+function vibrateError()    { localStorage.setItem("vib", "error"); }
+function vibrateLoaded()   { localStorage.setItem("vib", "loaded"); }
+function vibrateComplete() { localStorage.setItem("vib", "complete"); }
 
 function playOK() {
   if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
+  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
   osc.type = 'sine';
   osc.frequency.setValueAtTime(880, audioCtx.currentTime);
   osc.frequency.setValueAtTime(1100, audioCtx.currentTime + 0.1);
   gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-  osc.start(audioCtx.currentTime);
-  osc.stop(audioCtx.currentTime + 0.3);
+  osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.3);
 }
 
 function playError() {
   if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
+  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
   osc.type = 'sawtooth';
   osc.frequency.setValueAtTime(220, audioCtx.currentTime);
   osc.frequency.setValueAtTime(150, audioCtx.currentTime + 0.2);
   gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-  osc.start(audioCtx.currentTime);
-  osc.stop(audioCtx.currentTime + 0.5);
+  osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.5);
 }
 
 function playLoaded() {
   if (!audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
+  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
   osc.type = 'sine';
   osc.frequency.setValueAtTime(660, audioCtx.currentTime);
   gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
-  osc.start(audioCtx.currentTime);
-  osc.stop(audioCtx.currentTime + 0.2);
+  osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.2);
 }
 
 function playComplete() {
   if (!audioCtx) return;
   [523, 659, 784, 1047].forEach((freq, i) => {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
     osc.type = 'sine';
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.12);
     gain.gain.setValueAtTime(0.3, audioCtx.currentTime + i * 0.12);
@@ -208,6 +200,37 @@ function playComplete() {
     osc.stop(audioCtx.currentTime + i * 0.12 + 0.2);
   });
 }
+
+function completeMeasure(code, name) {
+  if (!checkedCodes.includes(code)) checkedCodes.push(code);
+  const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  logs.unshift({ result: 'ok', name: name, code: code, time });
+  save();
+  clearPending();
+  const found = PRODUCT.ingredients[code];
+  renderOK(name, code, found.shelf, found.amount, false, true);
+}
+
+function showWarning(pendingIngName) {
+  document.getElementById('modal').innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-icon">⚠️</div>
+        <div class="modal-title">計量が完了していません</div>
+        <div class="modal-msg">「${pendingIngName}」の計量を完了してから<br>次の原料をスキャンしてください</div>
+        <button class="modal-btn" onclick="closeWarning()">戻って計量完了する</button>
+      </div>
+    </div>
+  `;
+}
+
+function closeWarning() {
+  document.getElementById('modal').innerHTML = '';
+  // 計量待ち原料のOK画面に戻る
+  const found = PRODUCT.ingredients[pendingCode];
+  if (found) renderOK(found.name, pendingCode, found.shelf, found.amount, false, false);
+}
+
 function processURL() {
   const params = new URLSearchParams(window.location.search);
   const d = params.get('d');
@@ -215,7 +238,6 @@ function processURL() {
 
   const code = d.trim();
 
-  // 製造指示書QRコード（製品コード）の場合
   if (code === PRODUCT.code) {
     localStorage.setItem('cp', JSON.stringify({ code: PRODUCT.code, name: PRODUCT.name }));
     playLoaded(); vibrateLoaded();
@@ -223,32 +245,39 @@ function processURL() {
     return;
   }
 
-  // 製造指示書スキャン済みか確認
   const cp = JSON.parse(localStorage.getItem('cp') || 'null');
-  if (!cp) {
-    renderProductScan();
+  if (!cp) { renderProductScan(); return; }
+
+  // 計量待ちの原料があり、別の原料をスキャンしようとした場合
+  if (pendingCode && pendingCode !== code) {
+    showWarning(pendingName);
+    const found = PRODUCT.ingredients[pendingCode];
+    if (found) renderOK(found.name, pendingCode, found.shelf, found.amount, false, false);
     return;
   }
 
-  // 原料QRコードの処理
-  const ingCode = code;
-  const found = PRODUCT.ingredients[ingCode];
+  const found = PRODUCT.ingredients[code];
   const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   if (found) {
-    const already = checkedCodes.includes(ingCode);
-    if (!already) checkedCodes.push(ingCode);
-    logs.unshift({ result: 'ok', name: found.name, code: ingCode, time });
-    save();
-    playOK(); vibrateOK();
-    renderOK(found.name, ingCode, found.shelf, found.amount, already);
+    const already = checkedCodes.includes(code);
+    if (already) {
+      logs.unshift({ result: 'ok', name: found.name, code: code, time });
+      save();
+      playOK(); vibrateOK();
+      renderOK(found.name, code, found.shelf, found.amount, true, false);
+    } else {
+      savePending(code, found.name);
+      playOK(); vibrateOK();
+      renderOK(found.name, code, found.shelf, found.amount, false, false);
+    }
   } else {
-    const errIng = ALL_INGREDIENTS[ingCode];
-    const errName = errIng ? errIng.name : ingCode;
-    logs.unshift({ result: 'ng', name: errName, code: ingCode, time });
+    const errIng = ALL_INGREDIENTS[code];
+    const errName = errIng ? errIng.name : '不明な原料';
+    logs.unshift({ result: 'ng', name: errName, code: code, time });
     save();
     playError(); vibrateError();
-    renderError(ingCode);
+    renderError(code);
   }
 }
 
@@ -284,7 +313,7 @@ function renderWait() {
   `;
 }
 
-function renderOK(name, code, shelf, amount, already) {
+function renderOK(name, code, shelf, amount, already, measured) {
   const total = Object.keys(PRODUCT.ingredients).length;
   if (checkedCodes.length === total) {
     playComplete(); vibrateComplete();
@@ -316,6 +345,7 @@ function renderOK(name, code, shelf, amount, already) {
       <div class="detail-row"><span class="detail-label">OPコード</span><span class="detail-value">${code}</span></div>
       <div class="detail-row"><span class="detail-label">棚番</span><span class="detail-value">${shelf}</span></div>
     </div>
+    ${!already && !measured ? `<button class="btn-complete" onclick="completeMeasure('${code}', '${name}')">計量完了 ✅</button>` : ''}
     ${renderProductCard()}
     ${renderProgress()}
     ${renderLog()}
@@ -359,12 +389,13 @@ function renderProgress() {
   const total = Object.keys(ings).length;
   const count = checkedCodes.length;
   const pct = Math.round((count / total) * 100);
-  const items = Object.entries(ings).map(([code, ing]) => {
-    const checked = checkedCodes.includes(code);
-    return `<div class="ingredient-item ${checked?'checked':''}">
-      <div class="ingredient-check">${checked?'✓':''}</div>
+  const items = Object.entries(ings).map(([c, ing]) => {
+    const checked = checkedCodes.includes(c);
+    const pending = pendingCode === c;
+    return `<div class="ingredient-item ${checked ? 'checked' : pending ? 'pending' : ''}">
+      <div class="ingredient-check">${checked ? '✓' : pending ? '⏳' : ''}</div>
       <div class="ingredient-info">
-        <div class="ingredient-name">${ing.name}</div>
+        <div class="ingredient-name">${ing.name}${pending ? ' <span style="color:var(--orange);font-size:10px;">計量中</span>' : ''}</div>
         <div class="ingredient-amount">${ing.amount} ／ 棚：${ing.shelf}</div>
       </div>
     </div>`;
@@ -381,27 +412,27 @@ function renderProgress() {
 
 function renderLog() {
   if (logs.length === 0) return `<div class="card"><div class="card-title">スキャン記録</div><div class="empty-log">まだ記録がありません</div></div>`;
-  return `<div class="card"><div class="card-title">スキャン記録</div>${logs.map(l=>`
+  return `<div class="card"><div class="card-title">スキャン記録</div>${logs.map(l => `
     <div class="log-item">
-      <div class="log-badge ${l.result}">${l.result==='ok'?'OK':'NG'}</div>
+      <div class="log-badge ${l.result}">${l.result === 'ok' ? 'OK' : 'NG'}</div>
       <div class="log-text">${l.name}（${l.code}）</div>
       <div class="log-time">${l.time}</div>
     </div>`).join('')}</div>`;
 }
 
 function goToStart() {
-  // 記録リセットして製造指示書スキャン待機画面に戻る
   localStorage.removeItem('cc');
   localStorage.removeItem('lg');
   localStorage.removeItem('cp');
+  clearPending();
   checkedCodes = []; logs = [];
   renderProductScan();
 }
 
 function resetAll() {
-  // 記録リセットして原料照合画面に戻る
   localStorage.removeItem('cc');
   localStorage.removeItem('lg');
+  clearPending();
   checkedCodes = []; logs = [];
   renderWait();
 }
@@ -422,18 +453,14 @@ function renderProductScan() {
         4. 原料照合画面が開く
       </div>
     </div>
-
   `;
 }
 
-// 起動
 const urlParams = new URLSearchParams(window.location.search);
 const hasD = urlParams.get('d');
 const hasCp = localStorage.getItem('cp');
 
 if (hasD) {
-  // QRコードからアクセスした場合
-  const result = localStorage.getItem('last_result');
   processURL();
 } else if (hasCp) {
   renderWait();
@@ -441,7 +468,6 @@ if (hasD) {
   renderProductScan();
 }
 
-// ページ読み込み完了後にバイブレーション
 window.addEventListener('load', function() {
   const vib = localStorage.getItem('vib');
   if (vib === 'ok') {
