@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>原料照合チェック</title>
 <style>
   :root {
@@ -71,17 +73,13 @@
   .complete-banner h2 { font-size: 20px; font-weight: 900; color: white; }
   .complete-banner p { font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px; }
 
-  .btn-complete { width: 100%; padding: 18px; background: var(--green); border: none; border-radius: 14px; font-size: 17px; font-weight: 700; color: white; cursor: pointer; margin-bottom: 8px; letter-spacing: 0.05em; }
-  .btn-reset { width: 100%; padding: 14px; background: var(--surface); border: 2px solid var(--border); border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--muted); cursor: pointer; margin-bottom: 8px; }
+  .btn-complete { width: 100%; padding: 18px; background: var(--green); border: none; border-radius: 14px; font-size: 17px; font-weight: 700; color: white; cursor: pointer; margin-bottom: 8px; letter-spacing: 0.05em; -webkit-appearance: none; }
+  .btn-reset { width: 100%; padding: 14px; background: var(--surface); border: 2px solid var(--border); border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--muted); cursor: pointer; margin-bottom: 8px; -webkit-appearance: none; }
 
   .wait-card { background: var(--surface); border-radius: 14px; padding: 28px; text-align: center; border: 1px solid var(--border); margin-bottom: 16px; }
   .wait-icon { font-size: 48px; margin-bottom: 12px; }
   .wait-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
   .wait-sub { font-size: 13px; color: var(--muted); line-height: 1.6; }
-
-  .pending-card { background: #fff8f0; border: 2px solid var(--orange); border-radius: 14px; padding: 16px; margin-bottom: 16px; text-align: center; }
-  .pending-label { font-size: 13px; color: var(--orange); font-weight: 700; margin-bottom: 4px; }
-  .pending-name { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
 
   /* 警告モーダル */
   .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; animation: fadeIn 0.2s ease; }
@@ -91,6 +89,22 @@
   .modal-title { font-size: 18px; font-weight: 900; color: var(--orange); margin-bottom: 8px; }
   .modal-msg { font-size: 14px; color: var(--text); line-height: 1.6; margin-bottom: 20px; }
   .modal-btn { width: 100%; padding: 14px; background: var(--orange); border: none; border-radius: 12px; font-size: 15px; font-weight: 700; color: white; cursor: pointer; }
+
+  /* 視覚フラッシュ（iOS バイブレーション非対応の代替フィードバック） */
+  #flash {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none; z-index: 50; opacity: 0;
+  }
+  #flash.ok  { animation: flashGreen 0.45s forwards; }
+  #flash.err { animation: flashRed   0.45s forwards; }
+  @keyframes flashGreen {
+    0%   { opacity: 1; background: rgba(82, 183, 136, 0.40); }
+    100% { opacity: 0; background: rgba(82, 183, 136, 0); }
+  }
+  @keyframes flashRed {
+    0%   { opacity: 1; background: rgba(193, 18, 31, 0.40); }
+    100% { opacity: 0; background: rgba(193, 18, 31, 0); }
+  }
 </style>
 </head>
 <body>
@@ -102,6 +116,7 @@
 
 <div id="app"></div>
 <div id="modal"></div>
+<div id="flash"></div><!-- iOS・Android 共通の視覚フィードバック用 -->
 
 <script>
 const PRODUCT = {
@@ -130,83 +145,41 @@ function save() {
   localStorage.setItem('cc', JSON.stringify(checkedCodes));
   localStorage.setItem('lg', JSON.stringify(logs));
 }
-
 function savePending(code, name) {
-  pendingCode = code;
-  pendingName = name;
-  localStorage.setItem('pc', code);
-  localStorage.setItem('pn', name);
+  pendingCode = code; pendingName = name;
+  localStorage.setItem('pc', code); localStorage.setItem('pn', name);
 }
-
 function clearPending() {
-  pendingCode = null;
-  pendingName = null;
-  localStorage.removeItem('pc');
-  localStorage.removeItem('pn');
+  pendingCode = null; pendingName = null;
+  localStorage.removeItem('pc'); localStorage.removeItem('pn');
 }
 
-let audioCtx = null;
+/* ─────────────────────────────────────────
+   フィードバック（視覚フラッシュのみ）
+   Android・iOS 両対応
+───────────────────────────────────────── */
+function setFeedback(type) { localStorage.setItem('fb', type); }
 
-function vibrateOK()       { localStorage.setItem("vib", "ok"); }
-function vibrateError()    { localStorage.setItem("vib", "error"); }
-function vibrateLoaded()   { localStorage.setItem("vib", "loaded"); }
-function vibrateComplete() { localStorage.setItem("vib", "complete"); }
+window.addEventListener('load', function () {
+  const fb = localStorage.getItem('fb');
+  if (!fb) return;
+  localStorage.removeItem('fb');
 
-function playOK() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
-  osc.connect(gain); gain.connect(audioCtx.destination);
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-  osc.frequency.setValueAtTime(1100, audioCtx.currentTime + 0.1);
-  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-  osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.3);
-}
+  const el = document.getElementById('flash');
+  if (!el) return;
+  el.className = '';
+  void el.offsetWidth; // 強制リフロー（再アニメーション用）
+  el.className = (fb === 'ok' || fb === 'loaded' || fb === 'complete') ? 'ok' : 'err';
+});
 
-function playError() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
-  osc.connect(gain); gain.connect(audioCtx.destination);
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-  osc.frequency.setValueAtTime(150, audioCtx.currentTime + 0.2);
-  gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-  osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.5);
-}
-
-function playLoaded() {
-  if (!audioCtx) return;
-  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
-  osc.connect(gain); gain.connect(audioCtx.destination);
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(660, audioCtx.currentTime);
-  gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
-  osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.2);
-}
-
-function playComplete() {
-  if (!audioCtx) return;
-  [523, 659, 784, 1047].forEach((freq, i) => {
-    const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.12);
-    gain.gain.setValueAtTime(0.3, audioCtx.currentTime + i * 0.12);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.12 + 0.2);
-    osc.start(audioCtx.currentTime + i * 0.12);
-    osc.stop(audioCtx.currentTime + i * 0.12 + 0.2);
-  });
-}
-
+/* ─────────────────────────────────────────
+   ロジック（元のコードと同じ構造）
+───────────────────────────────────────── */
 function completeMeasure(code, name) {
   if (!checkedCodes.includes(code)) checkedCodes.push(code);
   const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  logs.unshift({ result: 'ok', name: name, code: code, time });
-  save();
-  clearPending();
+  logs.unshift({ result: 'ok', name, code, time });
+  save(); clearPending();
   const found = PRODUCT.ingredients[code];
   renderOK(name, code, found.shelf, found.amount, false, true);
 }
@@ -226,7 +199,6 @@ function showWarning(pendingIngName) {
 
 function closeWarning() {
   document.getElementById('modal').innerHTML = '';
-  // 計量待ち原料のOK画面に戻る
   const found = PRODUCT.ingredients[pendingCode];
   if (found) renderOK(found.name, pendingCode, found.shelf, found.amount, false, false);
 }
@@ -240,7 +212,7 @@ function processURL() {
 
   if (code === PRODUCT.code) {
     localStorage.setItem('cp', JSON.stringify({ code: PRODUCT.code, name: PRODUCT.name }));
-    playLoaded(); vibrateLoaded();
+    setFeedback('loaded');
     renderProductLoaded();
     return;
   }
@@ -248,7 +220,6 @@ function processURL() {
   const cp = JSON.parse(localStorage.getItem('cp') || 'null');
   if (!cp) { renderProductScan(); return; }
 
-  // 計量待ちの原料があり、別の原料をスキャンしようとした場合
   if (pendingCode && pendingCode !== code) {
     showWarning(pendingName);
     const found = PRODUCT.ingredients[pendingCode];
@@ -262,33 +233,36 @@ function processURL() {
   if (found) {
     const already = checkedCodes.includes(code);
     if (already) {
-      logs.unshift({ result: 'ok', name: found.name, code: code, time });
+      logs.unshift({ result: 'ok', name: found.name, code, time });
       save();
-      playOK(); vibrateOK();
+      setFeedback('ok');
       renderOK(found.name, code, found.shelf, found.amount, true, false);
     } else {
       savePending(code, found.name);
-      playOK(); vibrateOK();
+      setFeedback('ok');
       renderOK(found.name, code, found.shelf, found.amount, false, false);
     }
   } else {
     const errIng = ALL_INGREDIENTS[code];
     const errName = errIng ? errIng.name : '不明な原料';
-    logs.unshift({ result: 'ng', name: errName, code: code, time });
+    logs.unshift({ result: 'ng', name: errName, code, time });
     save();
-    playError(); vibrateError();
+    setFeedback('error');
     renderError(code);
   }
 }
 
+/* ─────────────────────────────────────────
+   描画
+───────────────────────────────────────── */
 function renderProductLoaded() {
   const total = Object.keys(PRODUCT.ingredients).length;
   document.getElementById('app').innerHTML = `
-    <div class="result-card loaded" style="background:var(--blue);color:white;border-radius:16px;padding:24px;text-align:center;margin-bottom:16px;">
-      <span style="font-size:52px;margin-bottom:10px;display:block;">📋</span>
-      <div style="font-size:26px;font-weight:900;margin-bottom:6px;">読み込み完了！</div>
-      <div style="font-size:18px;font-weight:700;opacity:0.9;">${PRODUCT.name}</div>
-      <div style="font-size:14px;opacity:0.8;margin-top:8px;">原料 ${total}種類が登録されました<br>次に原料をスキャンしてください</div>
+    <div class="result-card ok">
+      <span class="result-icon">📋</span>
+      <div class="result-title">読み込み完了！</div>
+      <div class="result-name">${PRODUCT.name}</div>
+      <div class="result-msg">原料 ${total}種類が登録されました<br>次に原料をスキャンしてください</div>
     </div>
     ${renderProductCard()}
     ${renderProgress()}
@@ -316,7 +290,7 @@ function renderWait() {
 function renderOK(name, code, shelf, amount, already, measured) {
   const total = Object.keys(PRODUCT.ingredients).length;
   if (checkedCodes.length === total) {
-    playComplete(); vibrateComplete();
+    setFeedback('complete');
     document.getElementById('app').innerHTML = `
       <div class="complete-banner">
         <div class="big">🎉</div>
@@ -328,6 +302,7 @@ function renderOK(name, code, shelf, amount, already, measured) {
       ${renderLog()}
       <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
     `;
+    // 完了音は window.load 時に fb='complete' で再生される
     return;
   }
   document.getElementById('app').innerHTML = `
@@ -421,19 +396,16 @@ function renderLog() {
 }
 
 function goToStart() {
-  localStorage.removeItem('cc');
-  localStorage.removeItem('lg');
-  localStorage.removeItem('cp');
-  clearPending();
+  ['cc','lg','cp','pc','pn'].forEach(k => localStorage.removeItem(k));
   checkedCodes = []; logs = [];
+  pendingCode = pendingName = null;
   renderProductScan();
 }
 
 function resetAll() {
-  localStorage.removeItem('cc');
-  localStorage.removeItem('lg');
-  clearPending();
+  ['cc','lg','pc','pn'].forEach(k => localStorage.removeItem(k));
   checkedCodes = []; logs = [];
+  pendingCode = pendingName = null;
   renderWait();
 }
 
@@ -456,31 +428,13 @@ function renderProductScan() {
   `;
 }
 
-const urlParams = new URLSearchParams(window.location.search);
-const hasD = urlParams.get('d');
+/* ─ 起動 ─ */
+const hasD  = new URLSearchParams(window.location.search).get('d');
 const hasCp = localStorage.getItem('cp');
 
-if (hasD) {
-  processURL();
-} else if (hasCp) {
-  renderWait();
-} else {
-  renderProductScan();
-}
-
-window.addEventListener('load', function() {
-  const vib = localStorage.getItem('vib');
-  if (vib === 'ok') {
-    setTimeout(() => { if (navigator.vibrate) navigator.vibrate(100); }, 300);
-  } else if (vib === 'error') {
-    setTimeout(() => { if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]); }, 300);
-  } else if (vib === 'loaded') {
-    setTimeout(() => { if (navigator.vibrate) navigator.vibrate(50); }, 300);
-  } else if (vib === 'complete') {
-    setTimeout(() => { if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 300]); }, 300);
-  }
-  localStorage.removeItem('vib');
-});
+if (hasD)       processURL();
+else if (hasCp) renderWait();
+else            renderProductScan();
 </script>
 </body>
 </html>
