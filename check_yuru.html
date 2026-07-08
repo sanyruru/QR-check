@@ -322,8 +322,6 @@ function processURL() {
 let html5QrCode = null;
 let scanning = false;
 let lastScanCode = null;
-let notFoundStreak = 0;
-const NOT_FOUND_RESET_THRESHOLD = 5; // 約0.5秒(fps10)映らなかったらリセット
 
 function extractCodeFromScan(decodedText) {
   // QRの中身が「https://.../check_yuru.html?d=00135」のようなURLならdの値を取り出す
@@ -360,21 +358,14 @@ async function toggleScanning() {
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 150, height: 150 } },
       (decodedText) => {
-        notFoundStreak = 0;
         const code = extractCodeFromScan(decodedText);
-        // 同じQRを映し続けている間は再判定しない（一旦視界から外れるまで）
+        // 別のQRコードが読み取られるまでは、同じQRで絶対に再度鳴らさない
+        // （手ブレやピント合わせで一瞬読み取れなくなっても誤って再発火しないように）
         if (code === lastScanCode) return;
         lastScanCode = code;
         handleCode(code);
       },
-      () => {
-        // QRが見つからないフレーム。一定回数続いたら「視界から外れた」とみなし、
-        // 同じQRをもう一度読んだ時にちゃんと反応するようにする
-        notFoundStreak++;
-        if (notFoundStreak >= NOT_FOUND_RESET_THRESHOLD) {
-          lastScanCode = null;
-        }
-      }
+      () => { /* フレームごとの「見つからない」は無視してよい（誤リセット防止のため） */ }
     );
     scanning = true;
     btn.textContent = '⏹ スキャン停止';
@@ -391,7 +382,6 @@ async function stopScanning() {
   }
   scanning = false;
   lastScanCode = null;
-  notFoundStreak = 0;
   document.getElementById('reader').classList.add('hidden');
   const btn = document.getElementById('scanToggleBtn');
   btn.textContent = '📷 スキャン開始';
