@@ -129,7 +129,7 @@
   <div class="card-title">QRスキャナー</div>
   <div id="reader" class="hidden"></div>
   <button id="scanToggleBtn" class="btn-scan" onclick="toggleScanning()">📷 スキャン開始</button>
-  <div class="scan-hint">カメラでQRコードを連続して読み取れます（音つき）</div>
+  <div class="scan-hint">枠の中に、読み取りたいラベル1枚だけが入るように近づけてください</div>
 </div>
 <!-- ▲▲▲ 新規追加ここまで ▲▲▲ -->
 
@@ -213,6 +213,13 @@ function playNgSound() {
   if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try { beep(ctx, {freq: 160, duration: 0.35, type: 'sawtooth', gain: 0.3}); } catch (e) {}
 }
+// 「照合済み」（2回目以降の同じ原料）専用：控えめな単音「ポン」
+function playAlreadySound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  try { beep(ctx, {freq: 600, duration: 0.15, type: 'sine', gain: 0.15}); } catch (e) {}
+}
 
 /* ─────────────────────────────────────────
    フィードバック（視覚フラッシュ＋できる時は音）
@@ -220,7 +227,9 @@ function playNgSound() {
 function setFeedback(type) {
   localStorage.setItem('fb', type);
   // 同一ページ内（ライブスキャン時）はその場で即座に鳴らす
-  if (type === 'ng') playNgSound(); else playOkSound();
+  if (type === 'ng') playNgSound();
+  else if (type === 'already') playAlreadySound();
+  else playOkSound();
 }
 
 window.addEventListener('load', function () {
@@ -232,7 +241,7 @@ window.addEventListener('load', function () {
   if (!el) return;
   el.className = '';
   void el.offsetWidth;
-  el.className = (fb === 'ok' || fb === 'loaded' || fb === 'complete') ? 'ok' : 'err';
+  el.className = (fb === 'ok' || fb === 'loaded' || fb === 'complete' || fb === 'already') ? 'ok' : 'err';
 });
 
 /* ─────────────────────────────────────────
@@ -270,7 +279,7 @@ function handleCode(code) {
     if (already) {
       logs.unshift({ result: 'ok', name: found.name, code, time });
       save();
-      setFeedback('ok');
+      setFeedback('already');
       renderOK(found.name, code, found.shelf, found.amount, true, false);
     } else {
       savePending(code, found.name);
@@ -328,7 +337,7 @@ async function toggleScanning() {
   try {
     await html5QrCode.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 240, height: 240 } },
+      { fps: 10, qrbox: { width: 150, height: 150 } },
       (decodedText) => {
         const now = Date.now();
         const code = extractCodeFromScan(decodedText);
