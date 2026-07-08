@@ -220,6 +220,13 @@ function playAlreadySound() {
   if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try { beep(ctx, {freq: 600, duration: 0.15, type: 'sine', gain: 0.15}); } catch (e) {}
 }
+// 製造指示書を読み込んだ時専用：「ピロン」（OK/照合済みとは違う音色・単音でやや長め）
+function playLoadedSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  try { beep(ctx, {freq: 1046, duration: 0.22, type: 'triangle', gain: 0.28}); } catch (e) {}
+}
 
 /* ─────────────────────────────────────────
    フィードバック（視覚フラッシュ＋できる時は音）
@@ -229,6 +236,7 @@ function setFeedback(type) {
   // 同一ページ内（ライブスキャン時）はその場で即座に鳴らす
   if (type === 'ng') playNgSound();
   else if (type === 'already') playAlreadySound();
+  else if (type === 'loaded') playLoadedSound();
   else playOkSound();
 }
 
@@ -325,6 +333,14 @@ function extractCodeFromScan(decodedText) {
 }
 
 async function toggleScanning() {
+  // iPhone(Safari)対策：ボタンをタップした瞬間、この関数の一番最初で
+  // 直接AudioContextを生成・再開しておく（カメラのコールバック内で
+  // 初めて音を鳴らそうとすると、iOSでは弾かれてしまうため）
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === 'suspended') {
+    try { await ctx.resume(); } catch (e) {}
+  }
+
   if (scanning) {
     await stopScanning();
     return;
