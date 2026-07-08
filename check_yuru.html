@@ -6,6 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>原料照合チェック</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root {
     --green: #2d6a4f; --green-light: #52b788; --green-pale: #d8f3dc;
@@ -18,6 +19,15 @@
   .header { text-align: center; margin-bottom: 16px; }
   .header-brand { font-size: 11px; letter-spacing: 0.2em; color: var(--muted); margin-bottom: 4px; }
   .header-title { font-size: 18px; font-weight: 700; color: var(--green); }
+
+  /* ─── QRスキャナー（新規追加） ─── */
+  .scanner-card { background: var(--surface); border-radius: 14px; padding: 16px; border: 1.5px solid var(--green-light); margin-bottom: 16px; }
+  .scanner-card .card-title { color: var(--green); }
+  #reader { width: 100%; max-width: 380px; margin: 0 auto 12px; border-radius: 10px; overflow: hidden; }
+  #reader.hidden { display: none; }
+  .btn-scan { width: 100%; padding: 16px; background: var(--green); border: none; border-radius: 12px; font-size: 16px; font-weight: 700; color: white; cursor: pointer; -webkit-appearance: none; }
+  .btn-scan.stop { background: var(--muted); }
+  .scan-hint { font-size: 12px; color: var(--muted); text-align: center; margin-top: 8px; line-height: 1.5; }
 
   .product-card { background: var(--blue); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
   .product-icon { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
@@ -90,7 +100,7 @@
   .modal-msg { font-size: 14px; color: var(--text); line-height: 1.6; margin-bottom: 20px; }
   .modal-btn { width: 100%; padding: 14px; background: var(--orange); border: none; border-radius: 12px; font-size: 15px; font-weight: 700; color: white; cursor: pointer; }
 
-  /* 視覚フラッシュ（iOS バイブレーション非対応の代替フィードバック） */
+  /* 視覚フラッシュ（音が鳴らせない環境向けの補助フィードバック） */
   #flash {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     pointer-events: none; z-index: 50; opacity: 0;
@@ -114,9 +124,18 @@
   <div class="header-title">製造管理</div>
 </div>
 
+<!-- ▼▼▼ 新規追加：ページ内カメラスキャナー ▼▼▼ -->
+<div class="scanner-card">
+  <div class="card-title">QRスキャナー</div>
+  <div id="reader" class="hidden"></div>
+  <button id="scanToggleBtn" class="btn-scan" onclick="toggleScanning()">📷 スキャン開始</button>
+  <div class="scan-hint">カメラでQRコードを連続して読み取れます（音つき）</div>
+</div>
+<!-- ▲▲▲ 新規追加ここまで ▲▲▲ -->
+
 <div id="app"></div>
 <div id="modal"></div>
-<div id="flash"></div><!-- iOS・Android 共通の視覚フィードバック用 -->
+<div id="flash"></div>
 
 <script>
 const PRODUCT = {
@@ -155,10 +174,54 @@ function clearPending() {
 }
 
 /* ─────────────────────────────────────────
-   フィードバック（視覚フラッシュのみ）
-   Android・iOS 両対応
+   効果音（Web Audio API・音声ファイル不要）
+   ※ ブラウザの自動再生制限のため、ページ遷移直後は
+     鳴らせないことがある。ページ内スキャナー使用時は
+     ボタン操作が起点になるので確実に鳴る。
 ───────────────────────────────────────── */
-function setFeedback(type) { localStorage.setItem('fb', type); }
+let _actx = null;
+function getAudioCtx() {
+  if (!_actx) {
+    try { _actx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { return null; }
+  }
+  return _actx;
+}
+function beep(ctx, {freq, duration, type = 'sine', gain = 0.3, delay = 0}) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  g.gain.value = gain;
+  osc.connect(g);
+  g.connect(ctx.destination);
+  osc.start(ctx.currentTime + delay);
+  osc.stop(ctx.currentTime + delay + duration);
+}
+function playOkSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  try {
+    beep(ctx, {freq: 880,  duration: 0.12, gain: 0.25});
+    beep(ctx, {freq: 1320, duration: 0.15, gain: 0.25, delay: 0.12});
+  } catch (e) {}
+}
+function playNgSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  try { beep(ctx, {freq: 160, duration: 0.35, type: 'sawtooth', gain: 0.3}); } catch (e) {}
+}
+
+/* ─────────────────────────────────────────
+   フィードバック（視覚フラッシュ＋できる時は音）
+───────────────────────────────────────── */
+function setFeedback(type) {
+  localStorage.setItem('fb', type);
+  // 同一ページ内（ライブスキャン時）はその場で即座に鳴らす
+  if (type === 'ng') playNgSound(); else playOkSound();
+}
 
 window.addEventListener('load', function () {
   const fb = localStorage.getItem('fb');
@@ -168,47 +231,19 @@ window.addEventListener('load', function () {
   const el = document.getElementById('flash');
   if (!el) return;
   el.className = '';
-  void el.offsetWidth; // 強制リフロー（再アニメーション用）
+  void el.offsetWidth;
   el.className = (fb === 'ok' || fb === 'loaded' || fb === 'complete') ? 'ok' : 'err';
 });
 
 /* ─────────────────────────────────────────
-   ロジック（元のコードと同じ構造）
+   判定ロジック（コード1つを受け取って処理する共通関数）
+   ・従来の「カメラアプリ→URL遷移」
+   ・新しい「ページ内カメラスキャン」
+   の両方からこの同じ関数を呼ぶ
 ───────────────────────────────────────── */
-function completeMeasure(code, name) {
-  if (!checkedCodes.includes(code)) checkedCodes.push(code);
-  const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  logs.unshift({ result: 'ok', name, code, time });
-  save(); clearPending();
-  const found = PRODUCT.ingredients[code];
-  renderOK(name, code, found.shelf, found.amount, false, true);
-}
-
-function showWarning(pendingIngName) {
-  document.getElementById('modal').innerHTML = `
-    <div class="modal-overlay">
-      <div class="modal">
-        <div class="modal-icon">⚠️</div>
-        <div class="modal-title">計量が完了していません</div>
-        <div class="modal-msg">「${pendingIngName}」の計量を完了してから<br>次の原料をスキャンしてください</div>
-        <button class="modal-btn" onclick="closeWarning()">戻って計量完了する</button>
-      </div>
-    </div>
-  `;
-}
-
-function closeWarning() {
-  document.getElementById('modal').innerHTML = '';
-  const found = PRODUCT.ingredients[pendingCode];
-  if (found) renderOK(found.name, pendingCode, found.shelf, found.amount, false, false);
-}
-
-function processURL() {
-  const params = new URLSearchParams(window.location.search);
-  const d = params.get('d');
-  if (!d) { renderWait(); return; }
-
-  const code = d.trim();
+function handleCode(code) {
+  if (!code) return;
+  code = code.trim();
 
   if (code === PRODUCT.code) {
     localStorage.setItem('cp', JSON.stringify({ code: PRODUCT.code, name: PRODUCT.name }));
@@ -247,14 +282,115 @@ function processURL() {
     const errName = errIng ? errIng.name : '不明な原料';
     logs.unshift({ result: 'ng', name: errName, code, time });
     save();
-    setFeedback('error');
+    setFeedback('ng');
     renderError(code);
   }
 }
 
+// 従来通り：URLの ?d= パラメータから起動する経路（そのまま残す）
+function processURL() {
+  const params = new URLSearchParams(window.location.search);
+  const d = params.get('d');
+  if (!d) { renderWait(); return; }
+  handleCode(d.trim());
+}
+
 /* ─────────────────────────────────────────
-   描画
+   ページ内カメラスキャン（html5-qrcode）
 ───────────────────────────────────────── */
+let html5QrCode = null;
+let scanning = false;
+let lastScanTime = 0;
+let lastScanCode = null;
+
+function extractCodeFromScan(decodedText) {
+  // QRの中身が「https://.../check_yuru.html?d=00135」のようなURLならdの値を取り出す
+  try {
+    const url = new URL(decodedText);
+    const d = url.searchParams.get('d');
+    if (d) return d.trim();
+  } catch (e) {
+    // URLでなければ、QRの中身をそのままコードとして扱う
+  }
+  return decodedText.trim();
+}
+
+async function toggleScanning() {
+  if (scanning) {
+    await stopScanning();
+    return;
+  }
+  const readerEl = document.getElementById('reader');
+  const btn = document.getElementById('scanToggleBtn');
+  readerEl.classList.remove('hidden');
+
+  html5QrCode = new Html5Qrcode("reader");
+  try {
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 240, height: 240 } },
+      (decodedText) => {
+        const now = Date.now();
+        const code = extractCodeFromScan(decodedText);
+        // 同じQRを連続で読み込まないよう1.5秒クールダウン
+        if (code === lastScanCode && now - lastScanTime < 1500) return;
+        lastScanTime = now;
+        lastScanCode = code;
+        handleCode(code);
+      },
+      () => { /* フレームごとの「見つからない」は無視 */ }
+    );
+    scanning = true;
+    btn.textContent = '⏹ スキャン停止';
+    btn.classList.add('stop');
+  } catch (err) {
+    alert('カメラを起動できませんでした。\nHTTPSのURLで開いているか、カメラの使用を許可しているか確認してください。\n\nエラー: ' + err);
+    readerEl.classList.add('hidden');
+  }
+}
+
+async function stopScanning() {
+  if (html5QrCode) {
+    try { await html5QrCode.stop(); await html5QrCode.clear(); } catch (e) {}
+  }
+  scanning = false;
+  document.getElementById('reader').classList.add('hidden');
+  const btn = document.getElementById('scanToggleBtn');
+  btn.textContent = '📷 スキャン開始';
+  btn.classList.remove('stop');
+}
+
+/* ─────────────────────────────────────────
+   描画（元のロジックのまま）
+───────────────────────────────────────── */
+function completeMeasure(code, name) {
+  if (!checkedCodes.includes(code)) checkedCodes.push(code);
+  const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  logs.unshift({ result: 'ok', name, code, time });
+  save(); clearPending();
+  const found = PRODUCT.ingredients[code];
+  renderOK(name, code, found.shelf, found.amount, false, true);
+}
+
+function showWarning(pendingIngName) {
+  document.getElementById('modal').innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-icon">⚠️</div>
+        <div class="modal-title">計量が完了していません</div>
+        <div class="modal-msg">「${pendingIngName}」の計量を完了してから<br>次の原料をスキャンしてください</div>
+        <button class="modal-btn" onclick="closeWarning()">戻って計量完了する</button>
+      </div>
+    </div>
+  `;
+}
+
+function closeWarning() {
+  document.getElementById('modal').innerHTML = '';
+  const found = PRODUCT.ingredients[pendingCode];
+  if (found) renderOK(found.name, pendingCode, found.shelf, found.amount, false, false);
+}
+
 function renderProductLoaded() {
   const total = Object.keys(PRODUCT.ingredients).length;
   document.getElementById('app').innerHTML = `
@@ -277,7 +413,7 @@ function renderWait() {
     <div class="wait-card">
       <div class="wait-icon">🧴</div>
       <div class="wait-title">ユルナチュール 原料照合システム</div>
-      <div class="wait-sub">原料のQRコードをカメラで読み取ってください<br>自動で照合結果が表示されます</div>
+      <div class="wait-sub">上の「スキャン開始」からQRコードを読み取ってください<br>自動で照合結果が表示されます</div>
     </div>
     ${renderProductCard()}
     ${renderProgress()}
@@ -290,7 +426,7 @@ function renderWait() {
 function renderOK(name, code, shelf, amount, already, measured) {
   const total = Object.keys(PRODUCT.ingredients).length;
   if (checkedCodes.length === total) {
-    setFeedback('complete');
+    localStorage.setItem('fb', 'complete');
     document.getElementById('app').innerHTML = `
       <div class="complete-banner">
         <div class="big">🎉</div>
@@ -302,7 +438,6 @@ function renderOK(name, code, shelf, amount, already, measured) {
       ${renderLog()}
       <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
     `;
-    // 完了音は window.load 時に fb='complete' で再生される
     return;
   }
   document.getElementById('app').innerHTML = `
@@ -414,15 +549,15 @@ function renderProductScan() {
     <div class="wait-card">
       <div class="wait-icon">📋</div>
       <div class="wait-title">製造指示書をスキャンしてください</div>
-      <div class="wait-sub">DIGNOのカメラアプリで製造指示書の<br>QRコードを読み取ってください</div>
+      <div class="wait-sub">上の「スキャン開始」から製造指示書の<br>QRコードを読み取ってください</div>
     </div>
     <div class="card">
       <div class="card-title">手順</div>
       <div style="font-size:13px;color:var(--muted);line-height:2;">
-        1. DIGNOのカメラアプリを起動<br>
-        2. 製造指示書のQRコードを読み取る<br>
-        3. 表示されたURLをタップ<br>
-        4. 原料照合画面が開く
+        1. 上の「📷 スキャン開始」をタップ<br>
+        2. 製造指示書のQRコードにカメラを向ける<br>
+        3. 自動で読み取られます<br>
+        4. 続けて原料のQRコードをスキャン
       </div>
     </div>
   `;
