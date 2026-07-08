@@ -220,12 +220,16 @@ function playAlreadySound() {
   if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try { beep(ctx, {freq: 600, duration: 0.15, type: 'sine', gain: 0.15}); } catch (e) {}
 }
-// 製造指示書を読み込んだ時専用：「ピロン」（OK/照合済みとは違う音色・単音でやや長め）
+// 製造指示書を読み込んだ時専用：3音の軽快なチャイム（矩形波でOK音とは違う質感に）
 function playLoadedSound() {
   const ctx = getAudioCtx();
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
-  try { beep(ctx, {freq: 1046, duration: 0.22, type: 'triangle', gain: 0.28}); } catch (e) {}
+  try {
+    beep(ctx, {freq: 523, duration: 0.1,  type: 'square', gain: 0.18, delay: 0});
+    beep(ctx, {freq: 659, duration: 0.1,  type: 'square', gain: 0.18, delay: 0.1});
+    beep(ctx, {freq: 784, duration: 0.2,  type: 'square', gain: 0.2,  delay: 0.2});
+  } catch (e) {}
 }
 
 /* ─────────────────────────────────────────
