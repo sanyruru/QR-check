@@ -464,6 +464,29 @@ async function stopScanning() {
 }
 
 /* ─────────────────────────────────────────
+   画面ロック・アプリ切り替え後の自動復帰
+   （裏に隠れている間にカメラの読み取りが止まってしまうことがあるため、
+     画面に戻ってきたタイミングで自動的にスキャンを再起動する）
+───────────────────────────────────────── */
+let wasScanningBeforeHide = false;
+
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) {
+    // 画面が隠れる直前の状態を覚えておく
+    wasScanningBeforeHide = scanning;
+  } else {
+    // 画面に戻ってきた瞬間、スキャン中だったなら自動で再起動する
+    if (wasScanningBeforeHide) {
+      wasScanningBeforeHide = false;
+      try {
+        await stopScanning();
+        await toggleScanning();
+      } catch (e) {}
+    }
+  }
+});
+
+/* ─────────────────────────────────────────
    描画（元のロジックのまま）
 ───────────────────────────────────────── */
 function completeMeasure(code, name) {
