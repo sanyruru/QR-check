@@ -433,6 +433,14 @@ const CONFIRM_THRESHOLD = 3; // 同じコードが3回連続で読めたら確�
 let lastFrameTime = Date.now();
 let isAutoRestarting = false;
 
+// ピンチズーム用（対応端末のみ有効。iPhoneのブラウザは非対応）
+let zoomSupported = false;
+let zoomMin = 1;
+let zoomMax = 1;
+let currentZoom = 1;
+let pinchStartDistance = null;
+let zoomAtPinchStart = 1;
+
 function extractCodeFromScan(decodedText) {
   try {
     const url = new URL(decodedText);
@@ -497,6 +505,18 @@ async function toggleScanning() {
     btn.textContent = '⏹ スキャン停止';
     btn.classList.add('stop');
 
+    // ズーム対応チェック（対応している端末だけピンチズームを有効にする）
+    zoomSupported = false;
+    try {
+      const capabilities = html5QrCode.getRunningTrackCapabilities();
+      if (capabilities && capabilities.zoom) {
+        zoomMin = capabilities.zoom.min;
+        zoomMax = capabilities.zoom.max;
+        currentZoom = zoomMin;
+        zoomSupported = true;
+      }
+    } catch (e) {}
+
     // iPhone(Safari)対策②：カメラの許可ダイアログが割り込んで
     // 音が止まってしまうことがあるため、起動が完了した直後にもう一度
     // 音の準備をし直す
@@ -515,6 +535,9 @@ async function stopScanning() {
   lastScanCode = null;
   pendingConfirmCode = null;
   pendingConfirmCount = 0;
+  zoomSupported = false;
+  currentZoom = 1;
+  pinchStartDistance = null;
   document.getElementById('reader').classList.add('hidden');
   const btn = document.getElementById('scanToggleBtn');
   btn.textContent = '📷 スキャン開始';
@@ -568,6 +591,47 @@ setInterval(async () => {
     }
   }
 }, 3000);
+
+/* ─────────────────────────────────────────
+   ピンチズーム（対応端末のみ）
+   iPhoneのブラウザ(Safari／Chromeとも)はWeb上から
+   カメラズームを操作する機能自体が無いため、対応端末
+   （主にAndroidのChrome系）でのみ実際にズームがかかる。
+   非対応端末では指で広げても何も起きないだけで、
+   エラーや誤動作にはならない。
+───────────────────────────────────────── */
+function getPinchDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+const readerElForZoom = document.getElementById('reader');
+
+readerElForZoom.addEventListener('touchmove', async (e) => {
+  if (!zoomSupported || e.touches.length !== 2) return;
+  e.preventDefault();
+
+  const dist = getPinchDistance(e.touches);
+  if (pinchStartDistance === null) {
+    pinchStartDistance = dist;
+    zoomAtPinchStart = currentZoom;
+    return;
+  }
+
+  const scale = dist / pinchStartDistance;
+  let newZoom = zoomAtPinchStart * scale;
+  newZoom = Math.min(zoomMax, Math.max(zoomMin, newZoom));
+  currentZoom = newZoom;
+
+  try {
+    await html5QrCode.applyVideoConstraints({ advanced: [{ zoom: currentZoom }] });
+  } catch (e) {}
+}, { passive: false });
+
+readerElForZoom.addEventListener('touchend', (e) => {
+  if (e.touches.length < 2) pinchStartDistance = null;
+});
 
 /* ─────────────────────────────────────────
    描画（元のロジックのまま）
