@@ -20,7 +20,7 @@
   .header-brand { font-size: 11px; letter-spacing: 0.2em; color: var(--muted); margin-bottom: 4px; }
   .header-title { font-size: 18px; font-weight: 700; color: var(--green); }
 
-  /* ─── QRスキャナー（新規追加） ─── */
+  /* ─── QRスキャナー ─── */
   .scanner-card { background: var(--surface); border-radius: 14px; padding: 16px; border: 1.5px solid var(--green-light); margin-bottom: 16px; }
   .scanner-card .card-title { color: var(--green); }
   #reader { width: 100%; max-width: 380px; margin: 0 auto 12px; border-radius: 10px; overflow: hidden; }
@@ -115,6 +115,9 @@
     0%   { opacity: 1; background: rgba(193, 18, 31, 0.40); }
     100% { opacity: 0; background: rgba(193, 18, 31, 0); }
   }
+
+  /* スキャナー状態表示（新規追加） */
+  .scan-status { font-size: 11px; text-align: center; margin-top: 6px; color: var(--muted); min-height: 14px; }
 </style>
 </head>
 <body>
@@ -124,14 +127,13 @@
   <div class="header-title">製造管理</div>
 </div>
 
-<!-- ▼▼▼ 新規追加：ページ内カメラスキャナー ▼▼▼ -->
 <div class="scanner-card">
   <div class="card-title">QRスキャナー</div>
   <div id="reader" class="hidden"></div>
   <button id="scanToggleBtn" class="btn-scan" onclick="toggleScanning()">📷 スキャン開始</button>
   <div class="scan-hint">枠の中に、読み取りたいラベル1枚だけが入るように近づけてください</div>
+  <div id="scanStatus" class="scan-status"></div>
 </div>
-<!-- ▲▲▲ 新規追加ここまで ▲▲▲ -->
 
 <div id="app"></div>
 <div id="modal"></div>
@@ -175,9 +177,6 @@ function clearPending() {
 
 /* ─────────────────────────────────────────
    効果音（Web Audio API・音声ファイル不要）
-   ※ ブラウザの自動再生制限のため、ページ遷移直後は
-     鳴らせないことがある。ページ内スキャナー使用時は
-     ボタン操作が起点になるので確実に鳴る。
 ───────────────────────────────────────── */
 let _actx = null;
 function getAudioCtx() {
@@ -213,14 +212,12 @@ function playNgSound() {
   if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try { beep(ctx, {freq: 160, duration: 0.35, type: 'sawtooth', gain: 0.3}); } catch (e) {}
 }
-// 「照合済み」（2回目以降の同じ原料）専用：控えめな単音「ポン」
 function playAlreadySound() {
   const ctx = getAudioCtx();
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
   try { beep(ctx, {freq: 600, duration: 0.15, type: 'sine', gain: 0.15}); } catch (e) {}
 }
-// 製造指示書を読み込んだ時専用：3音の軽快なチャイム（矩形波でOK音とは違う質感に）
 function playLoadedSound() {
   const ctx = getAudioCtx();
   if (!ctx) return;
@@ -232,12 +229,8 @@ function playLoadedSound() {
   } catch (e) {}
 }
 
-/* ─────────────────────────────────────────
-   フィードバック（視覚フラッシュ＋できる時は音）
-───────────────────────────────────────── */
 function setFeedback(type) {
   localStorage.setItem('fb', type);
-  // 同一ページ内（ライブスキャン時）はその場で即座に鳴らす
   if (type === 'ng') playNgSound();
   else if (type === 'already') playAlreadySound();
   else if (type === 'loaded') playLoadedSound();
@@ -256,12 +249,6 @@ window.addEventListener('load', function () {
   el.className = (fb === 'ok' || fb === 'loaded' || fb === 'complete' || fb === 'already') ? 'ok' : 'err';
 });
 
-/* ─────────────────────────────────────────
-   判定ロジック（コード1つを受け取って処理する共通関数）
-   ・従来の「カメラアプリ→URL遷移」
-   ・新しい「ページ内カメラスキャン」
-   の両方からこの同じ関数を呼ぶ
-───────────────────────────────────────── */
 function handleCode(code) {
   if (!code) return;
   code = code.trim();
@@ -308,7 +295,6 @@ function handleCode(code) {
   }
 }
 
-// 従来通り：URLの ?d= パラメータから起動する経路（そのまま残す）
 function processURL() {
   const params = new URLSearchParams(window.location.search);
   const d = params.get('d');
@@ -318,13 +304,22 @@ function processURL() {
 
 /* ─────────────────────────────────────────
    ページ内カメラスキャン（html5-qrcode）
+
+   ★ 修正点（動作が遅い・読み込みにムラがある問題への対処）
+   1) videoConstraints でカメラ解像度を 640x480 程度に明示的に制限
+      → 高解像度(1080p等)のままだと低スペック端末で毎フレームの
+        画像処理が重くなり、遅延やスキャン漏れの原因になる
+   2) disableFlip: true で反転画像の二重チェックを省略し、処理量を半減
+   3) 対応端末（Android Chrome等）ではブラウザ内蔵の高速QR検出API
+      (BarcodeDetector) を優先的に使うよう設定
+   4) qrbox を少し広げて枠を狙いやすくする
 ───────────────────────────────────────── */
 let html5QrCode = null;
 let scanning = false;
 let lastScanCode = null;
+let lastScanTime = 0;
 
 function extractCodeFromScan(decodedText) {
-  // QRの中身が「https://.../check_yuru.html?d=00135」のようなURLならdの値を取り出す
   try {
     const url = new URL(decodedText);
     const d = url.searchParams.get('d');
@@ -336,9 +331,6 @@ function extractCodeFromScan(decodedText) {
 }
 
 async function toggleScanning() {
-  // iPhone(Safari)対策：ボタンをタップした瞬間、この関数の一番最初で
-  // 直接AudioContextを生成・再開しておく（カメラのコールバック内で
-  // 初めて音を鳴らそうとすると、iOSでは弾かれてしまうため）
   const ctx = getAudioCtx();
   if (ctx && ctx.state === 'suspended') {
     try { await ctx.resume(); } catch (e) {}
@@ -349,28 +341,67 @@ async function toggleScanning() {
     return;
   }
   const readerEl = document.getElementById('reader');
-  const btn = document.getElementById('scanToggleBtn');
+  const statusEl = document.getElementById('scanStatus');
   readerEl.classList.remove('hidden');
+  if (statusEl) statusEl.textContent = 'カメラを起動しています…';
 
-  html5QrCode = new Html5Qrcode("reader");
+  html5QrCode = new Html5Qrcode("reader", {
+    // 対応端末（主にAndroid Chrome）なら、ブラウザ内蔵の高速デコーダーを使う
+    // ※ iPhoneのSafariにはこの機能自体が存在しないため、iPhoneでは常にJS側の解析(jsQR)になる
+    useBarCodeDetectorIfSupported: true,
+    verbose: false
+  });
+
+  // iPhone(Safari)かどうかを判定し、専用の軽量設定を使う
+  // SafariにはBarcodeDetectorがなく毎フレームJSで解析するため、
+  // Androidと同じ設定（qrbox大きめ・fps高め）だと処理が重くなりやすい
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  const scanConfig = isIOS
+    ? {
+        fps: 5,
+        qrbox: { width: 180, height: 180 },
+        disableFlip: true,
+        videoConstraints: {
+          facingMode: "environment",
+          width: { ideal: 480, max: 640 },
+          height: { ideal: 480, max: 640 }
+        }
+      }
+    : {
+        fps: 8,
+        qrbox: { width: 220, height: 220 },
+        disableFlip: true,
+        videoConstraints: {
+          facingMode: "environment",
+          width: { ideal: 640, max: 960 },
+          height: { ideal: 480, max: 720 }
+        }
+      };
+
   try {
     await html5QrCode.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 150, height: 150 } },
+      scanConfig,
       (decodedText) => {
         const code = extractCodeFromScan(decodedText);
-        // 別のQRコードが読み取られるまでは、同じQRで絶対に再度鳴らさない
-        // （手ブレやピント合わせで一瞬読み取れなくなっても誤って再発火しないように）
-        if (code === lastScanCode) return;
+        const now = Date.now();
+        // 同じQRの連続検知は、多少間隔を空けても無視する（誤反応防止）
+        if (code === lastScanCode && (now - lastScanTime) < 1500) return;
         lastScanCode = code;
+        lastScanTime = now;
         handleCode(code);
       },
-      () => { /* フレームごとの「見つからない」は無視してよい（誤リセット防止のため） */ }
+      () => { /* フレームごとの「見つからない」は無視してよい */ }
     );
     scanning = true;
+    const btn = document.getElementById('scanToggleBtn');
     btn.textContent = '⏹ スキャン停止';
     btn.classList.add('stop');
+    if (statusEl) statusEl.textContent = '';
   } catch (err) {
+    if (statusEl) statusEl.textContent = '';
     alert('カメラを起動できませんでした。\nHTTPSのURLで開いているか、カメラの使用を許可しているか確認してください。\n\nエラー: ' + err);
     readerEl.classList.add('hidden');
   }
@@ -386,6 +417,8 @@ async function stopScanning() {
   const btn = document.getElementById('scanToggleBtn');
   btn.textContent = '📷 スキャン開始';
   btn.classList.remove('stop');
+  const statusEl = document.getElementById('scanStatus');
+  if (statusEl) statusEl.textContent = '';
 }
 
 /* ─────────────────────────────────────────
