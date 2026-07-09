@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>原料照合チェック</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
@@ -426,6 +429,10 @@ let pendingConfirmCode = null;
 let pendingConfirmCount = 0;
 const CONFIRM_THRESHOLD = 3; // 同じコードが3回連続で読めたら確定（隣のQRの映り込み対策）
 
+// フリーズ監視用（カメラ映像は動いているのに内部で反応が止まるケースの対策）
+let lastFrameTime = Date.now();
+let isAutoRestarting = false;
+
 function extractCodeFromScan(decodedText) {
   try {
     const url = new URL(decodedText);
@@ -436,6 +443,8 @@ function extractCodeFromScan(decodedText) {
 }
 
 async function toggleScanning() {
+  if (isAutoRestarting) return; // 自動復帰処理中は手動タップを無視（二重起動防止）
+
   // iPhone(Safari)対策①：ボタンをタップした瞬間に音の準備をしておく
   const ctx = getAudioCtx();
   await resumeCtx(ctx);
@@ -454,6 +463,7 @@ async function toggleScanning() {
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 150, height: 150 } },
       (decodedText) => {
+        lastFrameTime = Date.now();
         const code = extractCodeFromScan(decodedText);
 
         // すでに確定済みの同じQRなら何もしない
@@ -477,11 +487,13 @@ async function toggleScanning() {
       },
       () => {
         // QRが見つからないフレームが挟まると誤検知の元になるので、確定待ちをリセット
+        lastFrameTime = Date.now();
         pendingConfirmCode = null;
         pendingConfirmCount = 0;
       }
     );
     scanning = true;
+    lastFrameTime = Date.now();
     btn.textContent = '⏹ スキャン停止';
     btn.classList.add('stop');
 
@@ -525,12 +537,37 @@ document.addEventListener('visibilitychange', async () => {
     if (wasScanningBeforeHide) {
       wasScanningBeforeHide = false;
       try {
+        isAutoRestarting = true;
         await stopScanning();
         await toggleScanning();
-      } catch (e) {}
+      } catch (e) {} finally {
+        isAutoRestarting = false;
+      }
     }
   }
 });
+
+/* ─────────────────────────────────────────
+   フリーズ監視（ウォッチドッグ）
+   画面を離れていないのに、カメラの読み取り処理自体が
+   内部で止まってしまうことがある（iPhoneで時々発生）。
+   一定時間、成功・失敗どちらのコールバックも来ない場合は
+   「反応が止まっている」とみなし、自動でスキャンを再起動する。
+───────────────────────────────────────── */
+const FREEZE_TIMEOUT_MS = 8000; // これ以上コールバックが無ければフリーズとみなす
+
+setInterval(async () => {
+  if (!scanning || isAutoRestarting || document.hidden) return;
+  if (Date.now() - lastFrameTime > FREEZE_TIMEOUT_MS) {
+    isAutoRestarting = true;
+    try {
+      await stopScanning();
+      await toggleScanning();
+    } catch (e) {} finally {
+      isAutoRestarting = false;
+    }
+  }
+}, 3000);
 
 /* ─────────────────────────────────────────
    描画（元のロジックのまま）
