@@ -195,6 +195,34 @@ function computeAmount(code) {
   return formatGrams(totalGrams * pct / 100);
 }
 
+/* ─────────────────────────────────────────
+   トレーサビリティ記録（GAS経由でGoogleスプレッドシートへ）
+   ※ GAS_URL は、GASをウェブアプリとしてデプロイした後に発行される
+     URL（.../exec で終わるもの）に書き換えてください。
+     空欄のままなら何もせず無視されます。
+───────────────────────────────────────── */
+const GAS_URL = ''; // 例: 'https://script.google.com/macros/s/xxxxx/exec'
+
+function logToSheet(ingredientName, ingredientCode, result) {
+  if (!GAS_URL) return; // 未設定なら何もしない
+  const payload = {
+    datetime: new Date().toLocaleString('ja-JP'),
+    productCode: currentProduct ? currentProduct.code : '',
+    productName: currentProduct ? currentProduct.name : '',
+    batchKg: getBatchKg() || '',
+    ingredientName,
+    ingredientCode,
+    result
+  };
+  // GASのウェブアプリはCORSに対応していないため mode:'no-cors' で送信
+  // （送信結果は読み取れないが、記録自体は正常に行われる）
+  fetch(GAS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify(payload)
+  }).catch(() => {});
+}
+
 let checkedCodes = JSON.parse(localStorage.getItem('cc') || '[]');
 let logs         = JSON.parse(localStorage.getItem('lg') || '[]');
 let pendingCode  = localStorage.getItem('pc') || null;
@@ -274,6 +302,21 @@ async function playLoadedSound() {
     beep(ctx, {freq: 784, duration: 0.2,  type: 'square', gain: 0.2,  delay: 0.2});
   } catch (e) {}
 }
+// 全原料の照合が完了した時専用：ちょっと華やかなファンファーレ
+async function playCompleteSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  await resumeCtx(ctx);
+  try {
+    // ドミソド（上昇アルペジオ）→ 最後にちょっと伸ばして華やかに
+    beep(ctx, {freq: 523.25, duration: 0.14, type: 'triangle', gain: 0.22, delay: 0});
+    beep(ctx, {freq: 659.25, duration: 0.14, type: 'triangle', gain: 0.22, delay: 0.14});
+    beep(ctx, {freq: 783.99, duration: 0.14, type: 'triangle', gain: 0.22, delay: 0.28});
+    beep(ctx, {freq: 1046.5, duration: 0.45, type: 'triangle', gain: 0.28, delay: 0.42});
+    // 少し厚みを出すための下のハモリ
+    beep(ctx, {freq: 523.25, duration: 0.45, type: 'sine', gain: 0.15, delay: 0.42});
+  } catch (e) {}
+}
 
 /* ─────────────────────────────────────────
    フィードバック（視覚フラッシュ＋できる時は音）
@@ -284,6 +327,7 @@ function setFeedback(type) {
   if (type === 'ng') playNgSound();
   else if (type === 'already') playAlreadySound();
   else if (type === 'loaded') playLoadedSound();
+  else if (type === 'complete') playCompleteSound();
   else playOkSound();
 }
 
@@ -351,6 +395,7 @@ function handleCode(code) {
     } else {
       savePending(code, master.name);
       setFeedback('ok');
+      logToSheet(master.name, code, 'OK');
       renderOK(master.name, code, master.shelf, computeAmount(code), false, false);
     }
   } else {
@@ -358,6 +403,7 @@ function handleCode(code) {
     logs.unshift({ result: 'ng', name: errName, code, time });
     save();
     setFeedback('ng');
+    logToSheet(errName, code, 'NG');
     renderError(code);
   }
 }
@@ -584,7 +630,7 @@ function renderWait() {
 function renderOK(name, code, shelf, amount, already, measured) {
   const total = Object.keys(currentProduct.ingredients).length;
   if (checkedCodes.length === total) {
-    localStorage.setItem('fb', 'complete');
+    setFeedback('complete');
     document.getElementById('app').innerHTML = `
       <div class="complete-banner">
         <div class="big">🎉</div>
