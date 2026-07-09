@@ -138,22 +138,62 @@
 <div id="flash"></div>
 
 <script>
-const PRODUCT = {
-  code: 'CP0727',
-  name: 'ユルナチュール',
-  ingredients: {
-    '00135': { name: 'スクワラン',     shelf: '1-1-3-2', amount: '13,800g' },
-    '00223': { name: '精製ホホバ油',   shelf: '1-1-4-3', amount: '9,130.77g' },
-    '00893': { name: 'ウコン油',       shelf: '1-2-1-6', amount: '23g' },
-    '00894': { name: 'ウコンS',        shelf: '1-2-1-7', amount: '0.23g' },
-    '00082': { name: 'カロットオイル', shelf: '1-12',    amount: '46g' },
-  }
-};
-
-const ALL_INGREDIENTS = {
+// 会社全体の原料マスター（名前・棚番）。新しい原料が増えたらここに追加するだけでOK
+const MASTER_INGREDIENTS = {
+  '00135': { name: 'スクワラン',     shelf: '1-1-3-2' },
+  '00223': { name: '精製ホホバ油',   shelf: '1-1-4-3' },
+  '00893': { name: 'ウコン油',       shelf: '1-2-1-6' },
+  '00894': { name: 'ウコンS',        shelf: '1-2-1-7' },
+  '00082': { name: 'カロットオイル', shelf: '1-12' },
   '00075': { name: '濃いグリセリン', shelf: '?' },
   '00153': { name: 'サラコス99',    shelf: '?' },
 };
+
+// 現在読み込んでいる製品（製造指示書QRを読むたびに入れ替わる）
+// 形式: { code, name, ingredients: { '00135': 60.0, '00223': 39.699, ... } }
+let currentProduct = JSON.parse(localStorage.getItem('cp') || 'null');
+
+// 製造指示書QRの中身を解析する。
+// 例: "CP0727,ユルナチュール,00135:60.0,00223:39.699,00893:0.1,00894:0.001,00082:0.2"
+// 解析できなければ null を返す（＝製造指示書QRではない＝原料QRとして扱う）
+function parseInstructionCode(raw) {
+  if (!raw.includes(',') || !raw.includes(':')) return null;
+  const parts = raw.split(',');
+  if (parts.length < 2) return null;
+  const code = parts[0].trim();
+  const name = parts[1].trim();
+  const ingredients = {};
+  for (let i = 2; i < parts.length; i++) {
+    const [ingCode, pctStr] = parts[i].split(':');
+    if (!ingCode || pctStr === undefined) continue;
+    const pct = parseFloat(pctStr);
+    if (!isNaN(pct)) ingredients[ingCode.trim()] = pct;
+  }
+  if (Object.keys(ingredients).length === 0) return null;
+  return { code, name, ingredients };
+}
+
+function getBatchKg() {
+  const v = localStorage.getItem('bk');
+  return v ? parseFloat(v) : null;
+}
+function setBatchKg(kg) {
+  localStorage.setItem('bk', String(kg));
+}
+function formatGrams(num) {
+  let rounded = Math.round(num * 100) / 100;
+  let parts = rounded.toString().split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.join('.') + 'g';
+}
+function computeAmount(code) {
+  const kg = getBatchKg();
+  if (!currentProduct || kg === null) return '―';
+  const pct = currentProduct.ingredients[code];
+  if (pct === undefined) return '―';
+  const totalGrams = kg * 1000;
+  return formatGrams(totalGrams * pct / 100);
+}
 
 let checkedCodes = JSON.parse(localStorage.getItem('cc') || '[]');
 let logs         = JSON.parse(localStorage.getItem('lg') || '[]');
@@ -172,6 +212,7 @@ function clearPending() {
   pendingCode = null; pendingName = null;
   localStorage.removeItem('pc'); localStorage.removeItem('pn');
 }
+
 
 /* ─────────────────────────────────────────
    効果音（Web Audio API・音声ファイル不要）
@@ -265,41 +306,55 @@ function handleCode(code) {
   if (!code) return;
   code = code.trim();
 
-  if (code === PRODUCT.code) {
-    localStorage.setItem('cp', JSON.stringify({ code: PRODUCT.code, name: PRODUCT.name }));
+  // 製造指示書QRかどうか判定（"コード,製品名,原料コード:割合,..." の形式）
+  const parsedProduct = parseInstructionCode(code);
+  if (parsedProduct) {
+    const isSameProduct = currentProduct && currentProduct.code === parsedProduct.code;
+    currentProduct = parsedProduct;
+    localStorage.setItem('cp', JSON.stringify(parsedProduct));
+    if (!isSameProduct) {
+      // 別の製品に切り替わった場合のみ、進捗・生産量をリセットする
+      checkedCodes = []; logs = [];
+      pendingCode = pendingName = null;
+      save(); clearPending();
+      localStorage.removeItem('bk');
+    }
     setFeedback('loaded');
-    renderProductLoaded();
+    if (getBatchKg() === null) {
+      renderBatchInput();
+    } else {
+      renderProductLoaded();
+    }
     return;
   }
 
-  const cp = JSON.parse(localStorage.getItem('cp') || 'null');
-  if (!cp) { renderProductScan(); return; }
+  if (!currentProduct) { renderProductScan(); return; }
 
   if (pendingCode && pendingCode !== code) {
     showWarning(pendingName);
-    const found = PRODUCT.ingredients[pendingCode];
-    if (found) renderOK(found.name, pendingCode, found.shelf, found.amount, false, false);
+    const master = MASTER_INGREDIENTS[pendingCode];
+    if (master) renderOK(master.name, pendingCode, master.shelf, computeAmount(pendingCode), false, false);
     return;
   }
 
-  const found = PRODUCT.ingredients[code];
+  const master = MASTER_INGREDIENTS[code];
+  const belongsToProduct = currentProduct.ingredients[code] !== undefined;
   const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  if (found) {
+  if (master && belongsToProduct) {
     const already = checkedCodes.includes(code);
     if (already) {
-      logs.unshift({ result: 'ok', name: found.name, code, time });
+      logs.unshift({ result: 'ok', name: master.name, code, time });
       save();
       setFeedback('already');
-      renderOK(found.name, code, found.shelf, found.amount, true, false);
+      renderOK(master.name, code, master.shelf, computeAmount(code), true, false);
     } else {
-      savePending(code, found.name);
+      savePending(code, master.name);
       setFeedback('ok');
-      renderOK(found.name, code, found.shelf, found.amount, false, false);
+      renderOK(master.name, code, master.shelf, computeAmount(code), false, false);
     }
   } else {
-    const errIng = ALL_INGREDIENTS[code];
-    const errName = errIng ? errIng.name : '不明な原料';
+    const errName = master ? master.name : '不明な原料';
     logs.unshift({ result: 'ng', name: errName, code, time });
     save();
     setFeedback('ng');
@@ -416,8 +471,8 @@ function completeMeasure(code, name) {
   const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   logs.unshift({ result: 'ok', name, code, time });
   save(); clearPending();
-  const found = PRODUCT.ingredients[code];
-  renderOK(name, code, found.shelf, found.amount, false, true);
+  const master = MASTER_INGREDIENTS[code];
+  renderOK(name, code, master.shelf, computeAmount(code), false, true);
 }
 
 function showWarning(pendingIngName) {
@@ -435,17 +490,49 @@ function showWarning(pendingIngName) {
 
 function closeWarning() {
   document.getElementById('modal').innerHTML = '';
-  const found = PRODUCT.ingredients[pendingCode];
-  if (found) renderOK(found.name, pendingCode, found.shelf, found.amount, false, false);
+  const master = MASTER_INGREDIENTS[pendingCode];
+  if (master) renderOK(master.name, pendingCode, master.shelf, computeAmount(pendingCode), false, false);
+}
+
+function renderBatchInput() {
+  document.getElementById('app').innerHTML = `
+    <div class="wait-card">
+      <div class="wait-icon">⚖️</div>
+      <div class="wait-title">本日の生産量を入力してください</div>
+      <div class="wait-sub">${currentProduct.name}を何kg作りますか？<br>入力すると各原料の必要量を自動計算します</div>
+    </div>
+    <div class="card">
+      <div class="card-title">生産量（kg）</div>
+      <input id="batchKgInput" type="number" inputmode="decimal" step="0.001" placeholder="例：23"
+        style="width:100%;padding:14px;font-size:20px;border-radius:10px;border:1.5px solid var(--border);text-align:center;">
+    </div>
+    <button class="btn-complete" onclick="confirmBatchInput()">この生産量で決定</button>
+  `;
+  setTimeout(() => { const el = document.getElementById('batchKgInput'); if (el) el.focus(); }, 100);
+}
+
+function confirmBatchInput() {
+  const el = document.getElementById('batchKgInput');
+  const val = parseFloat(el.value);
+  if (!val || val <= 0) {
+    alert('正しい生産量（kg）を入力してください');
+    return;
+  }
+  setBatchKg(val);
+  renderProductLoaded();
+}
+
+function editBatch() {
+  renderBatchInput();
 }
 
 function renderProductLoaded() {
-  const total = Object.keys(PRODUCT.ingredients).length;
+  const total = Object.keys(currentProduct.ingredients).length;
   document.getElementById('app').innerHTML = `
     <div class="result-card ok">
       <span class="result-icon">📋</span>
       <div class="result-title">読み込み完了！</div>
-      <div class="result-name">${PRODUCT.name}</div>
+      <div class="result-name">${currentProduct.name}</div>
       <div class="result-msg">原料 ${total}種類が登録されました<br>次に原料をスキャンしてください</div>
     </div>
     ${renderProductCard()}
@@ -460,7 +547,7 @@ function renderWait() {
   document.getElementById('app').innerHTML = `
     <div class="wait-card">
       <div class="wait-icon">🧴</div>
-      <div class="wait-title">ユルナチュール 原料照合システム</div>
+      <div class="wait-title">${currentProduct.name} 原料照合システム</div>
       <div class="wait-sub">上の「スキャン開始」からQRコードを読み取ってください<br>自動で照合結果が表示されます</div>
     </div>
     ${renderProductCard()}
@@ -472,7 +559,7 @@ function renderWait() {
 }
 
 function renderOK(name, code, shelf, amount, already, measured) {
-  const total = Object.keys(PRODUCT.ingredients).length;
+  const total = Object.keys(currentProduct.ingredients).length;
   if (checkedCodes.length === total) {
     localStorage.setItem('fb', 'complete');
     document.getElementById('app').innerHTML = `
@@ -496,7 +583,7 @@ function renderOK(name, code, shelf, amount, already, measured) {
       <div class="result-msg">${already ? 'この原料はすでに照合済みです' : '正しい原料です'}</div>
     </div>
     <div class="amount-card">
-      <div class="amount-label">必要量（${PRODUCT.name}用）</div>
+      <div class="amount-label">必要量（${currentProduct.name}用）</div>
       <div class="amount-value">${amount}</div>
     </div>
     <div class="card">
@@ -512,7 +599,7 @@ function renderOK(name, code, shelf, amount, already, measured) {
 }
 
 function renderError(code) {
-  const ing = ALL_INGREDIENTS[code];
+  const ing = MASTER_INGREDIENTS[code];
   const name = ing ? ing.name : '不明な原料';
   const shelf = ing ? ing.shelf : '?';
   document.getElementById('app').innerHTML = `
@@ -520,7 +607,7 @@ function renderError(code) {
       <span class="result-icon">❌</span>
       <div class="result-title">エラー！</div>
       <div class="result-name">${name}</div>
-      <div class="result-msg">OPコード：${code}<br>棚番：${shelf}<br>「${PRODUCT.name}」に使用する原料ではありません</div>
+      <div class="result-msg">OPコード：${code}<br>棚番：${shelf}<br>「${currentProduct.name}」に使用する原料ではありません</div>
     </div>
     ${renderProductCard()}
     ${renderProgress()}
@@ -530,31 +617,34 @@ function renderError(code) {
 }
 
 function renderProductCard() {
-  const total = Object.keys(PRODUCT.ingredients).length;
+  const total = Object.keys(currentProduct.ingredients).length;
+  const kg = getBatchKg();
   return `
     <div class="product-card">
       <div class="product-icon">🧴</div>
-      <div>
-        <div class="product-name">${PRODUCT.name}</div>
-        <div class="product-sub">${PRODUCT.code} ／ 原料 ${total}種類</div>
+      <div style="flex:1;">
+        <div class="product-name">${currentProduct.name}</div>
+        <div class="product-sub">${currentProduct.code} ／ 原料 ${total}種類${kg !== null ? ` ／ 生産量 ${kg}kg` : ''}</div>
       </div>
+      ${kg !== null ? `<div onclick="editBatch()" style="color:white;font-size:11px;text-decoration:underline;cursor:pointer;white-space:nowrap;">変更</div>` : ''}
     </div>
   `;
 }
 
 function renderProgress() {
-  const ings = PRODUCT.ingredients;
+  const ings = currentProduct.ingredients;
   const total = Object.keys(ings).length;
   const count = checkedCodes.length;
   const pct = Math.round((count / total) * 100);
-  const items = Object.entries(ings).map(([c, ing]) => {
+  const items = Object.entries(ings).map(([c, pct]) => {
+    const master = MASTER_INGREDIENTS[c] || { name: c, shelf: '?' };
     const checked = checkedCodes.includes(c);
     const pending = pendingCode === c;
     return `<div class="ingredient-item ${checked ? 'checked' : pending ? 'pending' : ''}">
       <div class="ingredient-check">${checked ? '✓' : pending ? '⏳' : ''}</div>
       <div class="ingredient-info">
-        <div class="ingredient-name">${ing.name}${pending ? ' <span style="color:var(--orange);font-size:10px;">計量中</span>' : ''}</div>
-        <div class="ingredient-amount">${ing.amount} ／ 棚：${ing.shelf}</div>
+        <div class="ingredient-name">${master.name}${pending ? ' <span style="color:var(--orange);font-size:10px;">計量中</span>' : ''}</div>
+        <div class="ingredient-amount">${computeAmount(c)} ／ 棚：${master.shelf}</div>
       </div>
     </div>`;
   }).join('');
@@ -579,9 +669,10 @@ function renderLog() {
 }
 
 function goToStart() {
-  ['cc','lg','cp','pc','pn'].forEach(k => localStorage.removeItem(k));
+  ['cc','lg','cp','pc','pn','bk'].forEach(k => localStorage.removeItem(k));
   checkedCodes = []; logs = [];
   pendingCode = pendingName = null;
+  currentProduct = null;
   renderProductScan();
 }
 
@@ -613,11 +704,10 @@ function renderProductScan() {
 
 /* ─ 起動 ─ */
 const hasD  = new URLSearchParams(window.location.search).get('d');
-const hasCp = localStorage.getItem('cp');
 
-if (hasD)       processURL();
-else if (hasCp) renderWait();
-else            renderProductScan();
+if (hasD)              processURL();
+else if (currentProduct) { getBatchKg() === null ? renderBatchInput() : renderWait(); }
+else                   renderProductScan();
 </script>
 </body>
 </html>
