@@ -175,9 +175,6 @@ function clearPending() {
 
 /* ─────────────────────────────────────────
    効果音（Web Audio API・音声ファイル不要）
-   ※ ブラウザの自動再生制限のため、ページ遷移直後は
-     鳴らせないことがある。ページ内スキャナー使用時は
-     ボタン操作が起点になるので確実に鳴る。
 ───────────────────────────────────────── */
 let _actx = null;
 function getAudioCtx() {
@@ -186,6 +183,11 @@ function getAudioCtx() {
     catch (e) { return null; }
   }
   return _actx;
+}
+async function resumeCtx(ctx) {
+  if (ctx && ctx.state === 'suspended') {
+    try { await ctx.resume(); } catch (e) {}
+  }
 }
 function beep(ctx, {freq, duration, type = 'sine', gain = 0.3, delay = 0}) {
   const osc = ctx.createOscillator();
@@ -198,33 +200,33 @@ function beep(ctx, {freq, duration, type = 'sine', gain = 0.3, delay = 0}) {
   osc.start(ctx.currentTime + delay);
   osc.stop(ctx.currentTime + delay + duration);
 }
-function playOkSound() {
+async function playOkSound() {
   const ctx = getAudioCtx();
   if (!ctx) return;
-  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  await resumeCtx(ctx);
   try {
     beep(ctx, {freq: 880,  duration: 0.12, gain: 0.25});
     beep(ctx, {freq: 1320, duration: 0.15, gain: 0.25, delay: 0.12});
   } catch (e) {}
 }
-function playNgSound() {
+async function playNgSound() {
   const ctx = getAudioCtx();
   if (!ctx) return;
-  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  await resumeCtx(ctx);
   try { beep(ctx, {freq: 160, duration: 0.35, type: 'sawtooth', gain: 0.3}); } catch (e) {}
 }
 // 「照合済み」（2回目以降の同じ原料）専用：控えめな単音「ポン」
-function playAlreadySound() {
+async function playAlreadySound() {
   const ctx = getAudioCtx();
   if (!ctx) return;
-  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  await resumeCtx(ctx);
   try { beep(ctx, {freq: 600, duration: 0.15, type: 'sine', gain: 0.15}); } catch (e) {}
 }
 // 製造指示書を読み込んだ時専用：3音の軽快なチャイム（矩形波でOK音とは違う質感に）
-function playLoadedSound() {
+async function playLoadedSound() {
   const ctx = getAudioCtx();
   if (!ctx) return;
-  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  await resumeCtx(ctx);
   try {
     beep(ctx, {freq: 523, duration: 0.1,  type: 'square', gain: 0.18, delay: 0});
     beep(ctx, {freq: 659, duration: 0.1,  type: 'square', gain: 0.18, delay: 0.1});
@@ -258,9 +260,6 @@ window.addEventListener('load', function () {
 
 /* ─────────────────────────────────────────
    判定ロジック（コード1つを受け取って処理する共通関数）
-   ・従来の「カメラアプリ→URL遷移」
-   ・新しい「ページ内カメラスキャン」
-   の両方からこの同じ関数を呼ぶ
 ───────────────────────────────────────── */
 function handleCode(code) {
   if (!code) return;
@@ -324,25 +323,18 @@ let scanning = false;
 let lastScanCode = null;
 
 function extractCodeFromScan(decodedText) {
-  // QRの中身が「https://.../check_yuru.html?d=00135」のようなURLならdの値を取り出す
   try {
     const url = new URL(decodedText);
     const d = url.searchParams.get('d');
     if (d) return d.trim();
-  } catch (e) {
-    // URLでなければ、QRの中身をそのままコードとして扱う
-  }
+  } catch (e) {}
   return decodedText.trim();
 }
 
 async function toggleScanning() {
-  // iPhone(Safari)対策：ボタンをタップした瞬間、この関数の一番最初で
-  // 直接AudioContextを生成・再開しておく（カメラのコールバック内で
-  // 初めて音を鳴らそうとすると、iOSでは弾かれてしまうため）
+  // iPhone(Safari)対策①：ボタンをタップした瞬間に音の準備をしておく
   const ctx = getAudioCtx();
-  if (ctx && ctx.state === 'suspended') {
-    try { await ctx.resume(); } catch (e) {}
-  }
+  await resumeCtx(ctx);
 
   if (scanning) {
     await stopScanning();
@@ -359,17 +351,20 @@ async function toggleScanning() {
       { fps: 10, qrbox: { width: 150, height: 150 } },
       (decodedText) => {
         const code = extractCodeFromScan(decodedText);
-        // 別のQRコードが読み取られるまでは、同じQRで絶対に再度鳴らさない
-        // （手ブレやピント合わせで一瞬読み取れなくなっても誤って再発火しないように）
         if (code === lastScanCode) return;
         lastScanCode = code;
         handleCode(code);
       },
-      () => { /* フレームごとの「見つからない」は無視してよい（誤リセット防止のため） */ }
+      () => {}
     );
     scanning = true;
     btn.textContent = '⏹ スキャン停止';
     btn.classList.add('stop');
+
+    // iPhone(Safari)対策②：カメラの許可ダイアログが割り込んで
+    // 音が止まってしまうことがあるため、起動が完了した直後にもう一度
+    // 音の準備をし直す
+    await resumeCtx(getAudioCtx());
   } catch (err) {
     alert('カメラを起動できませんでした。\nHTTPSのURLで開いているか、カメラの使用を許可しているか確認してください。\n\nエラー: ' + err);
     readerEl.classList.add('hidden');
