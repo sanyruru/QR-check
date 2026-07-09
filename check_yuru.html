@@ -206,7 +206,7 @@ function computeAmount(code) {
 ───────────────────────────────────────── */
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby9rd6uPUKem7EfJFwGdWH17PVBJ8gJTNzkVsrFZh1H6khwLQ0RtjnZF_cb0812iE6nJw/exec'; // 例: 'https://script.google.com/macros/s/xxxxx/exec'
 
-function logToSheet(ingredientName, ingredientCode, result) {
+function logToSheet(ingredientName, ingredientCode, result, ingredientAmount) {
   if (!GAS_URL) return; // 未設定なら何もしない
   const payload = {
     datetime: new Date().toLocaleString('ja-JP'),
@@ -215,6 +215,7 @@ function logToSheet(ingredientName, ingredientCode, result) {
     batchKg: getBatchKg() || '',
     ingredientName,
     ingredientCode,
+    ingredientAmount: ingredientAmount || '',
     result
   };
   // GASのウェブアプリはCORSに対応していないため mode:'no-cors' で送信
@@ -398,7 +399,7 @@ function handleCode(code) {
     } else {
       savePending(code, master.name);
       setFeedback('ok');
-      logToSheet(master.name, code, 'OK');
+      logToSheet(master.name, code, 'OK', computeAmount(code));
       renderOK(master.name, code, master.shelf, computeAmount(code), false, false);
     }
   } else {
@@ -406,7 +407,7 @@ function handleCode(code) {
     logs.unshift({ result: 'ng', name: errName, code, time });
     save();
     setFeedback('ng');
-    logToSheet(errName, code, 'NG');
+    logToSheet(errName, code, 'NG', '―');
     renderError(code);
   }
 }
