@@ -321,6 +321,9 @@ function processURL() {
 let html5QrCode = null;
 let scanning = false;
 let lastScanCode = null;
+let pendingConfirmCode = null;
+let pendingConfirmCount = 0;
+const CONFIRM_THRESHOLD = 3; // 同じコードが3回連続で読めたら確定（隣のQRの映り込み対策）
 
 function extractCodeFromScan(decodedText) {
   try {
@@ -351,11 +354,31 @@ async function toggleScanning() {
       { fps: 10, qrbox: { width: 150, height: 150 } },
       (decodedText) => {
         const code = extractCodeFromScan(decodedText);
-        if (code === lastScanCode) return;
-        lastScanCode = code;
-        handleCode(code);
+
+        // すでに確定済みの同じQRなら何もしない
+        if (code === lastScanCode) { pendingConfirmCode = null; pendingConfirmCount = 0; return; }
+
+        // 隣のQRが一瞬映り込んだだけの誤検知を防ぐため、
+        // 同じ新しいコードが連続で読めた時だけ「本当に読んだ」と確定する
+        if (code === pendingConfirmCode) {
+          pendingConfirmCount++;
+        } else {
+          pendingConfirmCode = code;
+          pendingConfirmCount = 1;
+        }
+
+        if (pendingConfirmCount >= CONFIRM_THRESHOLD) {
+          lastScanCode = code;
+          pendingConfirmCode = null;
+          pendingConfirmCount = 0;
+          handleCode(code);
+        }
       },
-      () => {}
+      () => {
+        // QRが見つからないフレームが挟まると誤検知の元になるので、確定待ちをリセット
+        pendingConfirmCode = null;
+        pendingConfirmCount = 0;
+      }
     );
     scanning = true;
     btn.textContent = '⏹ スキャン停止';
@@ -377,6 +400,8 @@ async function stopScanning() {
   }
   scanning = false;
   lastScanCode = null;
+  pendingConfirmCode = null;
+  pendingConfirmCount = 0;
   document.getElementById('reader').classList.add('hidden');
   const btn = document.getElementById('scanToggleBtn');
   btn.textContent = '📷 スキャン開始';
