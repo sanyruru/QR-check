@@ -1245,12 +1245,21 @@ function renderProductScan() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 製造者QR照合（追加パッチ）
+// 製造者QR照合パッチ（v2：複数端末で共有する版）
 //
 // 貼り付け場所：check_yuru.html の末尾にある「起動」のコメント行と
 //   const hasD  = new URLSearchParams(window.location.search).get('d');
 // の【すぐ上】に、このファイルの中身をまるごと貼り付けてください。
 // （既存のコードは1行も書き換えなくてOKです）
+//
+// 前提：GAS側は gas-code-v2.js（セッション機能つき）に差し替え済みであること。
+//
+// 仕組み：
+//   秤量担当が全原料の秤量を終えて人数を入力すると、GAS側に
+//  「今このバッチが進行中」という記録（セッション）を1件作ります。
+//   各社員は、自分のDIGNOでこのページを開いて自分の名札QRを読むだけで、
+//   その記録に自分の名前を追加できます（製造指示書を読む必要はありません）。
+//   人数が揃った瞬間に、揃えた本人の端末でスプレッドシートへ書き込みます。
 // ═══════════════════════════════════════════════════════════
 
 /* ─── 設定 ─────────────────────────────────────────────
@@ -1266,22 +1275,16 @@ const MANUFACTURERS = {
   'M06': '佐々木胤人',
 };
 
-/* ─── 状態 ─────────────────────────────────────────── */
-let scannedMakers    = JSON.parse(localStorage.getItem('mk') || '[]');
+/* ─── 状態（この端末だけの表示用フラグ。判定の根拠はサーバー側） ─── */
 let productionStarted = localStorage.getItem('st') === '1';
 
-function saveMakers() {
-  localStorage.setItem('mk', JSON.stringify(scannedMakers));
-}
 function clearMakers() {
-  scannedMakers = [];
   productionStarted = false;
-  localStorage.removeItem('mk');
   localStorage.removeItem('st');
   localStorage.removeItem('mn');
 }
 
-/* 本日の製造人数（この人数分の名札が揃うまで製造開始できない） */
+/* この端末がバッチを開始済みかどうか（＝人数入力を終えたかどうか） */
 function getMakerCount() {
   const v = localStorage.getItem('mn');
   return v ? parseInt(v, 10) : null;
@@ -1308,33 +1311,14 @@ function allIngredientsDone() {
   return !pendingCode && checkedCodes.length === total;
 }
 
-function makersComplete() {
-  const need = getMakerCount();
-  if (need === null) return false;
-  return scannedMakers.length >= need;
-}
-
-/* 秤量が終わったあとに出す画面を振り分ける */
-function renderMakerStep() {
-  if (getMakerCount() === null) renderMakerCountInput();
-  else renderMakerScan();
-}
-
-/* ─── 製造者一覧をスプレッドシートへ送る ─────────────── */
-function logManufacturersToSheet() {
-  if (!GAS_URL) return;
-  const payload = {
-    type: 'manufacture',                       // ← GAS側でこの値を見て親シートに書きます
-    productCode: currentProduct ? currentProduct.code : '',
-    productName: currentProduct ? currentProduct.name : '',
-    batchKg: getBatchKg() || '',
-    makerNames: scannedMakers.map(m => m.name).join('、')
-  };
-  fetch(GAS_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    body: JSON.stringify(payload)
-  }).catch(() => {});
+/* ─── GASへの問い合わせ（結果を読み返す必要があるのでGETを使う） ───
+   ※ POST + mode:'no-cors'（原料スキャンの記録などで従来から使っているもの）は
+     送信はできても結果を読み返せないため、製造者まわりはすべてGETで統一しています。 */
+function gasGet(params) {
+  const qs = Object.keys(params)
+    .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k] === undefined || params[k] === null ? '' : params[k]))
+    .join('&');
+  return fetch(GAS_URL + '?' + qs).then(r => r.json());
 }
 
 /* ─── handleCode を差し替え（製造者QRの分岐を追加） ───── */
@@ -1360,53 +1344,19 @@ handleCode = function (code) {
     return;
   }
 
-  if (!currentProduct) { renderProductScan(); return; }
-
-  // 製造開始後はもう何もしない（誤スキャン防止）
-  if (productionStarted) { renderComplete(); return; }
-
-  // ② 製造者QR
+  // ② 製造者QR（現在地・進捗に関係なく、まずここで判定する。
+  //    社員のDIGNOには製造指示書が読み込まれていない＝currentProductがnullなので、
+  //    このチェックを「currentProductが要る」処理より先に置く必要がある）
   const maker = parseManufacturerCode(code);
   if (maker) {
-    if (!allIngredientsDone()) {
-      setFeedback('ng');
-      showMakerModal(
-        '秤量がまだ終わっていません',
-        '原料の秤量をすべて終えてから<br>製造者の名札をスキャンしてください'
-      );
-      return;
-    }
-    if (!maker.name) {
-      setFeedback('ng');
-      showMakerModal(
-        '登録されていない名札です',
-        `コード：${maker.key}<br>製造メンバーとして登録されていません`
-      );
-      return;
-    }
-    if (getMakerCount() === null) {
-      setFeedback('ng');
-      renderMakerCountInput();
-      showMakerModal(
-        '本日の製造人数が未入力です',
-        '先に本日の製造人数を入力してから<br>名札をスキャンしてください'
-      );
-      return;
-    }
-    if (scannedMakers.some(m => m.key === maker.key)) {
-      setFeedback('already');
-    } else {
-      scannedMakers.push({
-        key: maker.key,
-        name: maker.name,
-        time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-      saveMakers();
-      setFeedback('ok');
-    }
-    renderMakerScan();
+    handleMakerScan(maker);
     return;
   }
+
+  if (!currentProduct) { renderProductScan(); return; }
+
+  // 製造者確認が完了したあとは、誤スキャン防止のため状態画面を出すだけにする
+  if (productionStarted) { renderMakerStep(); return; }
 
   // ③ 原料QR（ここから下は従来どおり）
   if (pendingCode && pendingCode !== code) {
@@ -1445,7 +1395,7 @@ handleCode = function (code) {
 
 /* ─── renderOK を差し替え ────────────────────────────
    秤量が全部終わったら「完了バナー」ではなく
-   「製造者スキャン画面」へ進むようにする  */
+   「製造者確認のステップ」へ進むようにする  */
 renderOK = function (name, code, shelf, amount, already, measured) {
   const total = Object.keys(currentProduct.ingredients).length;
   if (checkedCodes.length === total && !pendingCode) {
@@ -1475,13 +1425,13 @@ renderOK = function (name, code, shelf, amount, already, measured) {
   `;
 };
 
-/* ─── 本日の製造人数の入力画面 ───────────────────── */
+/* ─── 本日の製造人数の入力画面（秤量担当の端末でのみ表示） ───── */
 function renderMakerCountInput() {
   document.getElementById('app').innerHTML = `
     <div class="wait-card">
       <div class="wait-icon">👥</div>
       <div class="wait-title">本日の製造人数を入力してください</div>
-      <div class="wait-sub">${currentProduct.name}の製造に入る人数です<br>この人数分の名札をスキャンすると製造を開始できます</div>
+      <div class="wait-sub">${currentProduct.name}の製造に入る人数です<br>入力すると、各自のDIGNOで名札をスキャンできるようになります</div>
     </div>
     <div class="card">
       <div class="card-title">製造人数（人）</div>
@@ -1496,25 +1446,124 @@ function renderMakerCountInput() {
   setTimeout(() => { const el = document.getElementById('makerCountInput'); if (el) el.focus(); }, 100);
 }
 
-function confirmMakerCount() {
+async function confirmMakerCount() {
   const el = document.getElementById('makerCountInput');
   const val = parseInt(el.value, 10);
   if (!val || val < 1) {
     alert('正しい製造人数を入力してください');
     return;
   }
+
+  document.getElementById('app').innerHTML = `
+    <div class="wait-card"><div class="wait-icon">📡</div><div class="wait-title">送信中...</div></div>
+  `;
+
+  let res;
+  try {
+    res = await gasGet({
+      action: 'session_start',
+      productCode: currentProduct.code,
+      productName: currentProduct.name,
+      batchKg: getBatchKg() || '',
+      needed: val
+    });
+  } catch (e) {
+    showMakerModal('サーバーに接続できません', '電波の良い場所でもう一度お試しください');
+    renderMakerCountInput();
+    return;
+  }
+
+  if (!res.success) {
+    showMakerModal('送信できませんでした', res.error || 'もう一度お試しください');
+    renderMakerCountInput();
+    return;
+  }
+
   setMakerCount(val);
-  renderMakerScan();
+  renderMakerWaitScreen(res.session);
 }
 
-function editMakerCount() {
-  renderMakerCountInput();
+/* ─── 秤量が終わったあとに出す画面を振り分ける（この端末＝秤量担当の端末専用） ─── */
+function renderMakerStep() {
+  if (getMakerCount() === null) { renderMakerCountInput(); return; }
+
+  document.getElementById('app').innerHTML = `
+    <div class="wait-card"><div class="wait-icon">📡</div><div class="wait-title">状態を確認中...</div></div>
+  `;
+
+  gasGet({ action: 'get_session' }).then(res => {
+    if (!res.success || !res.session) { renderMakerCountInput(); return; }
+    if (res.session.status === 'done') { renderMakerCompleteScreen(res.session); }
+    else { renderMakerWaitScreen(res.session); }
+  }).catch(() => {
+    renderMakerCountInput();
+  });
 }
 
-/* ─── 製造者スキャン画面 ─────────────────────────── */
-function renderMakerScan() {
+/* ─── 名札QRを読んだときの処理（秤量担当の端末・社員のDIGNOの両方から呼ばれる） ─── */
+async function handleMakerScan(maker) {
+  if (!maker.name) {
+    setFeedback('ng');
+    showMakerModal(
+      '登録されていない名札です',
+      `コード：${maker.key}<br>製造メンバーとして登録されていません`
+    );
+    return;
+  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="wait-card"><div class="wait-icon">📡</div><div class="wait-title">確認中...</div></div>
+  `;
+
+  let res;
+  try {
+    res = await gasGet({ action: 'session_maker', makerKey: maker.key, makerName: maker.name });
+  } catch (e) {
+    setFeedback('ng');
+    showMakerModal('サーバーに接続できません', '電波の良い場所でもう一度スキャンしてください');
+    renderMakerFallbackScreen();
+    return;
+  }
+
+  if (!res.success) {
+    if (res.error === 'already_done') {
+      setFeedback('already');
+      renderMakerCompleteScreen(res.session);
+      return;
+    }
+    setFeedback('ng');
+    if (res.error === 'no_active_session') {
+      showMakerModal(
+        'まだバッチが始まっていません',
+        '秤量担当が本日の製造人数を入力したあとに<br>もう一度名札をスキャンしてください'
+      );
+    } else {
+      showMakerModal('記録できませんでした', 'もう一度スキャンしてください');
+    }
+    renderMakerFallbackScreen();
+    return;
+  }
+
+  if (res.completed) {
+    renderMakerCompleteScreen(res.session);
+  } else if (res.already) {
+    setFeedback('already');
+    renderMakerWaitScreen(res.session);
+  } else {
+    setFeedback('ok');
+    renderMakerWaitScreen(res.session);
+  }
+}
+
+/* 名札スキャンがうまくいかなかったときに、状況に応じて戻る先を選ぶ */
+function renderMakerFallbackScreen() {
+  if (currentProduct) { renderMakerStep(); } else { renderProductScan(); }
+}
+
+/* ─── 製造者確認 待ち画面（秤量担当の端末・社員のDIGNOの両方で同じ画面を使う） ─── */
+function renderMakerWaitScreen(session) {
   const items = Object.keys(MANUFACTURERS).map(k => {
-    const hit = scannedMakers.find(m => m.key === k);
+    const hit = session.makers.find(m => m.key === k);
     return `<div class="ingredient-item ${hit ? 'checked' : ''}">
       <div class="ingredient-check">${hit ? '✓' : ''}</div>
       <div class="ingredient-info">
@@ -1524,71 +1573,77 @@ function renderMakerScan() {
     </div>`;
   }).join('');
 
-  const need  = getMakerCount();
-  const ready = makersComplete();
-  const rest  = Math.max(0, need - scannedMakers.length);
-  const pct   = Math.min(100, Math.round((scannedMakers.length / need) * 100));
+  const rest = Math.max(0, session.needed - session.makers.length);
+  const pct  = Math.min(100, Math.round((session.makers.length / session.needed) * 100));
+
+  // 秤量担当の端末なら原料の進捗も出す。社員のDIGNOには原料データがないので簡易表示にする
+  const productBlock = currentProduct
+    ? renderProductCard() + renderProgress() + renderLog()
+    : `<div class="product-card">
+        <div class="product-icon">🧴</div>
+        <div style="flex:1;">
+          <div class="product-name">${session.productName}</div>
+          <div class="product-sub">${session.productCode} ／ 生産量 ${session.batchKg}kg</div>
+        </div>
+      </div>`;
 
   document.getElementById('app').innerHTML = `
     <div class="result-card ok">
       <span class="result-icon">⚖️</span>
       <div class="result-title">秤量完了</div>
-      <div class="result-name">${currentProduct.name}</div>
-      <div class="result-msg">${ready
-        ? '全員の名札を確認しました<br>製造を開始できます'
-        : `製造に入るメンバーの名札をスキャンしてください<br>あと ${rest}名で製造を開始できます`}</div>
+      <div class="result-name">${session.productName}</div>
+      <div class="result-msg">製造に入るメンバーの名札をスキャンしてください<br>あと ${rest}名で製造を開始できます</div>
     </div>
     <div class="card">
       <div class="card-title">製造者確認</div>
-      <div class="progress-header">
-        <span>スキャン済み</span>
-        <span>${scannedMakers.length} / ${need}名　<span onclick="editMakerCount()" style="text-decoration:underline;cursor:pointer;">人数変更</span></span>
-      </div>
+      <div class="progress-header"><span>スキャン済み</span><span>${session.makers.length} / ${session.needed}名</span></div>
       <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div class="ingredient-list">${items}</div>
     </div>
-    ${ready
-      ? `<button class="btn-complete" onclick="startProduction()">製造を開始する ▶</button>`
-      : `<button class="btn-complete" style="background:var(--muted);cursor:default;" disabled>製造を開始する ▶</button>`}
-    ${renderProductCard()}
-    ${renderProgress()}
-    ${renderLog()}
+    ${productBlock}
+    <button class="btn-reset" onclick="cancelSession()">🛑 このバッチをキャンセル</button>
     <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
   `;
 }
 
-/* ─── 製造開始（ここで初めてスプレッドシートに記録） ─── */
-function startProduction() {
-  if (!makersComplete()) return;
+/* ─── 製造者確認 完了画面 ───────────────────────────── */
+function renderMakerCompleteScreen(session) {
   productionStarted = true;
   localStorage.setItem('st', '1');
-  logManufacturersToSheet();
   setFeedback('complete');
-  renderComplete();
-}
 
-/* ─── 製造開始後の画面 ───────────────────────────── */
-function renderComplete() {
-  const total = Object.keys(currentProduct.ingredients).length;
-  const names = scannedMakers.map(m => m.name).join('、');
+  const names = session.makers.map(m => m.name).join('、');
+  const productBlock = currentProduct
+    ? renderProductCard() + renderProgress() + renderLog()
+    : `<div class="product-card">
+        <div class="product-icon">🧴</div>
+        <div style="flex:1;">
+          <div class="product-name">${session.productName}</div>
+          <div class="product-sub">${session.productCode} ／ 生産量 ${session.batchKg}kg</div>
+        </div>
+      </div>`;
+
   document.getElementById('app').innerHTML = `
     <div class="complete-banner">
       <div class="big">🎉</div>
-      <h2>全原料の照合が完了</h2>
-      <p>${total}/${total} 原料すべて合格 — 製造を開始できます</p>
+      <h2>製造者確認 完了</h2>
+      <p>${session.productName} — 製造者 ${session.makers.length}名を確認しました</p>
     </div>
     <div class="card">
       <div class="card-title">製造者</div>
-      <div class="detail-row">
-        <span class="detail-label">本日の製造者</span>
-        <span class="detail-value">${names || '―'}</span>
-      </div>
+      <div class="detail-row"><span class="detail-label">本日の製造者</span><span class="detail-value">${names || '―'}</span></div>
     </div>
-    ${renderProductCard()}
-    ${renderProgress()}
-    ${renderLog()}
+    ${productBlock}
     <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
   `;
+}
+
+/* ─── このバッチをキャンセル（人数を打ち間違えた時などに使う） ───── */
+async function cancelSession() {
+  if (!confirm('このバッチの製造者確認をキャンセルします。よろしいですか？')) return;
+  try { await gasGet({ action: 'session_clear' }); } catch (e) {}
+  clearMakers();
+  resetAll();
 }
 
 /* ─── 注意モーダル ───────────────────────────────── */
@@ -1615,15 +1670,14 @@ goToStart = function () { clearMakers(); _goToStartOrig(); };
 const _resetAllOrig = resetAll;
 resetAll = function () { clearMakers(); _resetAllOrig(); };
 
-/* ─── 再読み込みしたときに正しい画面へ戻す ──────────── */
+/* ─── 再読み込みしたときに正しい画面へ戻す（秤量担当の端末のみ該当） ───── */
 const _renderWaitOrig = renderWait;
 renderWait = function () {
-  if (currentProduct && productionStarted)      { renderComplete();  return; }
-  if (currentProduct && allIngredientsDone())   { renderMakerStep(); return; }
+  if (currentProduct && (allIngredientsDone() || productionStarted)) { renderMakerStep(); return; }
   _renderWaitOrig();
 };
 
-/* ═══════════ 製造者QR照合パッチ ここまで ═══════════ */
+/* ═══════════ 製造者QR照合パッチ（v2）ここまで ═══════════ */
 
 /* ─ 起動 ─ */
 const hasD  = new URLSearchParams(window.location.search).get('d');
