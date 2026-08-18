@@ -1,4 +1,22 @@
 <!DOCTYPE html>
+<!--
+================================================================
+  原料照合システム（check_yuru.html）
+
+  ★★★ このファイルを直したら、APP_VERSION も必ず新しくすること ★★★
+
+  スクリプトの中ほどにある APP_VERSION の行を探して、
+  日付や番号を前と違う値に変えてからコミットしてください。
+  （Ctrl+F で「APP_VERSION」と検索すると見つかります）
+
+  変え忘れると、現場のスマホは「同じ版だ」と判断して更新しません。
+  中身は直っているのに、現場では古いまま使われ続けます。
+  （iPhoneはホーム画面に追加した時点の版を保存し続けるため）
+
+  直したあとの確認方法：
+  端末でアプリを開き、画面上部の版数の表示が新しくなっていればOK。
+================================================================
+-->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -22,6 +40,7 @@
   .header { text-align: center; margin-bottom: 16px; }
   .header-brand { font-size: 11px; letter-spacing: 0.2em; color: var(--muted); margin-bottom: 4px; }
   .header-title { font-size: 18px; font-weight: 700; color: var(--green); }
+  .header-ver { font-size: 10px; color: var(--muted); margin-top: 3px; font-family: monospace; }
 
   /* ─── QRスキャナー ─── */
   .scanner-card { background: var(--surface); border-radius: 14px; padding: 16px; border: 1.5px solid var(--green-light); margin-bottom: 16px; }
@@ -125,6 +144,7 @@
 <div class="header">
   <div class="header-brand">原料照合システム</div>
   <div class="header-title">製造管理</div>
+  <div class="header-ver" id="appVer"></div>
 </div>
 
 <div class="scanner-card">
@@ -1690,6 +1710,64 @@ renderWait = function () {
 //      読んだ瞬間に「ピッ」と鳴らし、名前を先に出す。
 // ═══════════════════════════════════════════════════════════
 
+/* ══════════════════════════════════════════════════════
+   ★★★ 直したら APP_VERSION も必ず新しくすること ★★★
+   このすぐ下の行です。変え忘れると現場の端末が更新されません。
+   ══════════════════════════════════════════════════════ */
+const APP_VERSION = 'v3.4 (2026-08-18)';
+
+/* ─── 版数の表示 ───────────────────────────────────────
+   端末が古いページをキャッシュしていないか、目で確かめるための表示。 */
+(function () {
+  const el = document.getElementById('appVer');
+  if (el) el.textContent = APP_VERSION + ' ／ 製造者QR対応';
+})();
+
+/* ─── 自動更新 ─────────────────────────────────────────
+   iPhoneでホーム画面に追加すると、追加した時点のページが端末内に
+   保存され、こちらがファイルを直しても反映されない（iOSの仕様）。
+   そこで起動時にGitHub上の最新ファイルを見に行き、APP_VERSION が
+   自分と違っていたら、新しいURLで読み込み直す。
+
+   ・通信できないときは何もしない（現場で電波が弱くても止まらない）
+   ・localStorageは読み込み直しても消えないので、作業中の進捗は残る
+   ・同じ版で何度も読み込み直す無限ループにならないよう1回に制限する  */
+async function checkForUpdate() {
+  try {
+    const base = location.href.split('?')[0].split('#')[0];
+
+    // キャッシュを確実に避けるため、毎回ちがうURLとして取りに行く
+    const res = await fetch(base + '?_=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+
+    const text = await res.text();
+    const m = text.match(/const APP_VERSION = '([^']+)'/);
+    if (!m) return;
+
+    const latest = m[1];
+    if (latest === APP_VERSION) {
+      sessionStorage.removeItem('updTried');   // 最新なので印を消す
+      return;
+    }
+
+    // 同じ版に対して読み込み直すのは1回だけ（読み込み直しても
+    // まだ古いままだった場合に、延々と繰り返さないための保険）
+    if (sessionStorage.getItem('updTried') === latest) return;
+    sessionStorage.setItem('updTried', latest);
+
+    document.getElementById('app').innerHTML = `
+      <div class="wait-card">
+        <div class="wait-icon">⬇️</div>
+        <div class="wait-title">新しい版に更新しています</div>
+        <div class="wait-sub">${APP_VERSION} → ${latest}<br>そのままお待ちください</div>
+      </div>
+    `;
+    location.replace(base + '?v=' + encodeURIComponent(latest));
+  } catch (e) {
+    // 通信できない場合は、今入っている版のまま普通に使う
+  }
+}
+
 /* ─── 設定 ───────────────────────────────────────────── */
 const CONFIRM_THRESHOLD_MFR = 2;   // 名札QRの確定に必要な回数
 const ALLOWED_MISS_FRAMES   = 3;   // これ未満の読み落としなら積み上げを維持する
@@ -1914,6 +1992,11 @@ if (hasD) {
     })
     .catch(() => { if (!currentProduct) renderProductScan(); });
 }
+
+/* 起動のたびに、新しい版が出ていないか確認する。
+   ただし ?d= 付き（標準カメラでQRを読んで開いた場合）は、
+   読み込み直すとそのコードが失われるので確認しない。 */
+if (!hasD) checkForUpdate();
 </script>
 </body>
 </html>
