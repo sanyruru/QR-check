@@ -1247,13 +1247,6 @@ function renderProductScan() {
 // ═══════════════════════════════════════════════════════════
 // 製造者QR照合パッチ（v2：複数端末で共有する版）
 //
-// 貼り付け場所：check_yuru.html の末尾にある「起動」のコメント行と
-//   const hasD  = new URLSearchParams(window.location.search).get('d');
-// の【すぐ上】に、このファイルの中身をまるごと貼り付けてください。
-// （既存のコードは1行も書き換えなくてOKです）
-//
-// 前提：GAS側は gas-code-v2.js（セッション機能つき）に差し替え済みであること。
-//
 // 仕組み：
 //   秤量担当が全原料の秤量を終えて人数を入力すると、GAS側に
 //  「今このバッチが進行中」という記録（セッション）を1件作ります。
@@ -1678,6 +1671,184 @@ renderWait = function () {
 };
 
 /* ═══════════ 製造者QR照合パッチ（v2）ここまで ═══════════ */
+
+// ═══════════════════════════════════════════════════════════
+// スキャン高速化パッチ（v3）
+//
+// 直したこと：
+//   ① QRを1フレーム読み落とすたびに、確定までの積み上げが
+//      ゼロに戻っていた（これが遅さの主因）。2フレームまで許容する。
+//   ② 読み取り枠が150pxと小さく、狙いを合わせるのに時間がかかっていた。
+//   ③ 名札QRは、原料QRと同じ「3回連続」を要求していた。
+//      名札は1枚ずつ手に持って読むので2回で十分。
+//      ※原料QRは3回のまま。誤投入防止の厳しさは一切変わりません。
+//   ④ 名札はサーバーの返事を待つ間、無音・無表示だった。
+//      読んだ瞬間に「ピッ」と鳴らし、名前を先に出す。
+// ═══════════════════════════════════════════════════════════
+
+/* ─── 設定 ───────────────────────────────────────────── */
+const CONFIRM_THRESHOLD_MFR = 2;   // 名札QRの確定に必要な回数
+const ALLOWED_MISS_FRAMES   = 3;   // これ未満の読み落としなら積み上げを維持する
+const QRBOX_SIZE            = 250; // 読み取り枠の大きさ（px）
+const SCAN_FPS              = 15;  // 1秒あたりの読み取り回数
+
+let missFrames = 0;
+
+function thresholdFor(code) {
+  return /^MFR:/i.test(code) ? CONFIRM_THRESHOLD_MFR : CONFIRM_THRESHOLD;
+}
+
+/* ─── 読み取った瞬間の合図音（結果が出る前に鳴らす短い音） ─── */
+function playTickSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  resumeCtx(ctx).then(() => {
+    try { beep(ctx, { freq: 1000, duration: 0.06, type: 'square', gain: 0.2 }); } catch (e) {}
+  });
+}
+
+/* ─── toggleScanning を差し替え ───────────────────────── */
+toggleScanning = async function () {
+  if (isAutoRestarting) return;
+
+  const ctx = getAudioCtx();
+  await resumeCtx(ctx);
+
+  if (scanning) {
+    await stopScanning();
+    return;
+  }
+
+  const readerEl = document.getElementById('reader');
+  const btn = document.getElementById('scanToggleBtn');
+  readerEl.classList.remove('hidden');
+
+  html5QrCode = new Html5Qrcode("reader");
+  try {
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: SCAN_FPS, qrbox: { width: QRBOX_SIZE, height: QRBOX_SIZE } },
+      (decodedText) => {
+        lastFrameTime = Date.now();
+        missFrames = 0;
+        const code = extractCodeFromScan(decodedText);
+
+        // すでに確定済みの同じQRなら何もしない
+        if (code === lastScanCode) { pendingConfirmCode = null; pendingConfirmCount = 0; return; }
+
+        if (code === pendingConfirmCode) {
+          pendingConfirmCount++;
+        } else {
+          pendingConfirmCode = code;
+          pendingConfirmCount = 1;
+        }
+
+        if (pendingConfirmCount >= thresholdFor(code)) {
+          lastScanCode = code;
+          pendingConfirmCode = null;
+          pendingConfirmCount = 0;
+          handleCode(code);
+        }
+      },
+      () => {
+        lastFrameTime = Date.now();
+        // 1〜2フレーム読み落としただけで積み上げを捨てると、いつまでも確定しない。
+        // 連続して読み落とした時だけリセットする
+        missFrames++;
+        if (missFrames >= ALLOWED_MISS_FRAMES) {
+          pendingConfirmCode = null;
+          pendingConfirmCount = 0;
+          missFrames = 0;
+        }
+      }
+    );
+
+    scanning = true;
+    lastFrameTime = Date.now();
+    missFrames = 0;
+    btn.textContent = '⏹ スキャン停止';
+    btn.classList.add('stop');
+
+    zoomSupported = false;
+    try {
+      const capabilities = html5QrCode.getRunningTrackCapabilities();
+      if (capabilities && capabilities.zoom) {
+        zoomMin = capabilities.zoom.min;
+        zoomMax = capabilities.zoom.max;
+        currentZoom = zoomMin;
+        zoomSupported = true;
+      }
+    } catch (e) {}
+
+    await resumeCtx(getAudioCtx());
+  } catch (err) {
+    alert('カメラを起動できませんでした。\nHTTPSのURLで開いているか、カメラの使用を許可しているか確認してください。\n\nエラー: ' + err);
+    readerEl.classList.add('hidden');
+  }
+};
+
+/* ─── handleMakerScan を差し替え（読んだ瞬間に音と名前を出す） ─── */
+handleMakerScan = async function (maker) {
+  if (!maker.name) {
+    setFeedback('ng');
+    showMakerModal(
+      '登録されていない名札です',
+      `コード：${maker.key}<br>製造メンバーとして登録されていません`
+    );
+    return;
+  }
+
+  // サーバーの返事を待たずに、その場で音を鳴らして名前を出す
+  playTickSound();
+  document.getElementById('app').innerHTML = `
+    <div class="wait-card">
+      <div class="wait-icon">👤</div>
+      <div class="wait-title">${maker.name} さん</div>
+      <div class="wait-sub">確認中...</div>
+    </div>
+  `;
+
+  let res;
+  try {
+    res = await gasGet({ action: 'session_maker', makerKey: maker.key, makerName: maker.name });
+  } catch (e) {
+    setFeedback('ng');
+    showMakerModal('サーバーに接続できません', '電波の良い場所でもう一度スキャンしてください');
+    renderMakerFallbackScreen();
+    return;
+  }
+
+  if (!res.success) {
+    if (res.error === 'already_done') {
+      setFeedback('already');
+      renderMakerCompleteScreen(res.session);
+      return;
+    }
+    setFeedback('ng');
+    if (res.error === 'no_active_session') {
+      showMakerModal(
+        'まだバッチが始まっていません',
+        '秤量担当が本日の製造人数を入力したあとに<br>もう一度名札をスキャンしてください'
+      );
+    } else {
+      showMakerModal('記録できませんでした', 'もう一度スキャンしてください');
+    }
+    renderMakerFallbackScreen();
+    return;
+  }
+
+  if (res.completed) {
+    renderMakerCompleteScreen(res.session);
+  } else if (res.already) {
+    setFeedback('already');
+    renderMakerWaitScreen(res.session);
+  } else {
+    setFeedback('ok');
+    renderMakerWaitScreen(res.session);
+  }
+};
+
+/* ═══════════ スキャン高速化パッチ（v3）ここまで ═══════════ */
 
 /* ─ 起動 ─ */
 const hasD  = new URLSearchParams(window.location.search).get('d');
