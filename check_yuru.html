@@ -1594,7 +1594,7 @@ function renderMakerWaitScreen(session) {
       <div class="ingredient-list">${items}</div>
     </div>
     ${productBlock}
-    <button class="btn-reset" onclick="cancelSession()">🛑 このバッチをキャンセル</button>
+    ${currentProduct ? `<button class="btn-reset" onclick="cancelSession()">🛑 このバッチをキャンセル</button>` : ''}
     <button class="btn-reset" onclick="resetAll()">🔄 リセット</button>
   `;
 }
@@ -1663,10 +1663,14 @@ goToStart = function () { clearMakers(); _goToStartOrig(); };
 const _resetAllOrig = resetAll;
 resetAll = function () { clearMakers(); _resetAllOrig(); };
 
-/* ─── 再読み込みしたときに正しい画面へ戻す（秤量担当の端末のみ該当） ───── */
+/* ─── 再読み込みしたときに正しい画面へ戻す ───── */
 const _renderWaitOrig = renderWait;
 renderWait = function () {
-  if (currentProduct && (allIngredientsDone() || productionStarted)) { renderMakerStep(); return; }
+  // 製造メンバーのDIGNOには製品データが無い。
+  // そのまま元のrenderWaitを呼ぶと currentProduct.name でエラーになり画面が固まるため、
+  // ここで最初の画面に戻す（「リセット」を押したときなどに通る）
+  if (!currentProduct) { renderProductScan(); return; }
+  if (allIngredientsDone() || productionStarted) { renderMakerStep(); return; }
   _renderWaitOrig();
 };
 
@@ -1853,9 +1857,34 @@ handleMakerScan = async function (maker) {
 /* ─ 起動 ─ */
 const hasD  = new URLSearchParams(window.location.search).get('d');
 
-if (hasD)              processURL();
-else if (currentProduct) { getBatchKg() === null ? renderBatchInput() : renderWait(); }
-else                   renderProductScan();
+if (hasD) {
+  processURL();
+} else if (currentProduct) {
+  getBatchKg() === null ? renderBatchInput() : renderWait();
+} else {
+  // この端末には製品データが無い＝製造メンバーのDIGNOで開いた可能性が高い。
+  // 進行中のバッチがあるならサーバーに聞いて、いきなり名札スキャンの画面を出す。
+  // （「製造指示書をスキャンしてください」と出ていると、指示書が要ると誤解されるため）
+  document.getElementById('app').innerHTML = `
+    <div class="wait-card">
+      <div class="wait-icon">📡</div>
+      <div class="wait-title">確認中...</div>
+      <div class="wait-sub">進行中の製造があるか確かめています</div>
+    </div>
+  `;
+  gasGet({ action: 'get_session' })
+    .then(res => {
+      // 返事を待っている間にユーザーが指示書QRを読んでいたら、
+      // その画面を上書きしてはいけないので何もしない
+      if (currentProduct) return;
+      if (res && res.success && res.session && res.session.status === 'collecting') {
+        renderMakerWaitScreen(res.session);   // 名札待ちのバッチがある
+      } else {
+        renderProductScan();                  // 無ければ従来どおり
+      }
+    })
+    .catch(() => { if (!currentProduct) renderProductScan(); });
+}
 </script>
 </body>
 </html>
