@@ -1693,8 +1693,20 @@ renderWait = function () {
 /* ─── 設定 ───────────────────────────────────────────── */
 const CONFIRM_THRESHOLD_MFR = 2;   // 名札QRの確定に必要な回数
 const ALLOWED_MISS_FRAMES   = 3;   // これ未満の読み落としなら積み上げを維持する
-const QRBOX_SIZE            = 250; // 読み取り枠の大きさ（px）
+const QRBOX_SIZE            = 250; // 読み取り枠の最大の大きさ（px）
 const SCAN_FPS              = 15;  // 1秒あたりの読み取り回数
+
+/* 読み取り枠の大きさを、カメラ映像の大きさに合わせて決める。
+   固定値にすると、映像より枠が大きくなった端末（iPhoneなど画面の狭い機種）で
+   カメラの起動そのものが失敗するため、必ず映像に収まるサイズに丸める。 */
+function calcQrbox(viewfinderWidth, viewfinderHeight) {
+  const shorter = Math.min(viewfinderWidth || 0, viewfinderHeight || 0);
+  let size = Math.floor(shorter * 0.8);          // 映像の短い方の8割
+  if (!size || size < 0) size = 150;             // 取得できなければ従来値
+  size = Math.min(size, QRBOX_SIZE);             // 大きすぎないように上限
+  size = Math.max(size, 120);                    // 小さすぎないように下限
+  return { width: size, height: size };
+}
 
 let missFrames = 0;
 
@@ -1709,6 +1721,42 @@ function playTickSound() {
   resumeCtx(ctx).then(() => {
     try { beep(ctx, { freq: 1000, duration: 0.06, type: 'square', gain: 0.2 }); } catch (e) {}
   });
+}
+
+/* ─── 読み取り成功・失敗時の処理 ───────────────────── */
+function onScanSuccess(decodedText) {
+  lastFrameTime = Date.now();
+  missFrames = 0;
+  const code = extractCodeFromScan(decodedText);
+
+  // すでに確定済みの同じQRなら何もしない
+  if (code === lastScanCode) { pendingConfirmCode = null; pendingConfirmCount = 0; return; }
+
+  if (code === pendingConfirmCode) {
+    pendingConfirmCount++;
+  } else {
+    pendingConfirmCode = code;
+    pendingConfirmCount = 1;
+  }
+
+  if (pendingConfirmCount >= thresholdFor(code)) {
+    lastScanCode = code;
+    pendingConfirmCode = null;
+    pendingConfirmCount = 0;
+    handleCode(code);
+  }
+}
+
+function onScanFailure() {
+  lastFrameTime = Date.now();
+  // 1〜2フレーム読み落としただけで積み上げを捨てると、いつまでも確定しない。
+  // 連続して読み落とした時だけリセットする
+  missFrames++;
+  if (missFrames >= ALLOWED_MISS_FRAMES) {
+    pendingConfirmCode = null;
+    pendingConfirmCount = 0;
+    missFrames = 0;
+  }
 }
 
 /* ─── toggleScanning を差し替え ───────────────────────── */
@@ -1729,43 +1777,24 @@ toggleScanning = async function () {
 
   html5QrCode = new Html5Qrcode("reader");
   try {
-    await html5QrCode.start(
-      { facingMode: "environment" },
-      { fps: SCAN_FPS, qrbox: { width: QRBOX_SIZE, height: QRBOX_SIZE } },
-      (decodedText) => {
-        lastFrameTime = Date.now();
-        missFrames = 0;
-        const code = extractCodeFromScan(decodedText);
-
-        // すでに確定済みの同じQRなら何もしない
-        if (code === lastScanCode) { pendingConfirmCode = null; pendingConfirmCount = 0; return; }
-
-        if (code === pendingConfirmCode) {
-          pendingConfirmCount++;
-        } else {
-          pendingConfirmCode = code;
-          pendingConfirmCount = 1;
-        }
-
-        if (pendingConfirmCount >= thresholdFor(code)) {
-          lastScanCode = code;
-          pendingConfirmCode = null;
-          pendingConfirmCount = 0;
-          handleCode(code);
-        }
-      },
-      () => {
-        lastFrameTime = Date.now();
-        // 1〜2フレーム読み落としただけで積み上げを捨てると、いつまでも確定しない。
-        // 連続して読み落とした時だけリセットする
-        missFrames++;
-        if (missFrames >= ALLOWED_MISS_FRAMES) {
-          pendingConfirmCode = null;
-          pendingConfirmCount = 0;
-          missFrames = 0;
-        }
-      }
-    );
+    try {
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: SCAN_FPS, qrbox: calcQrbox },
+        onScanSuccess,
+        onScanFailure
+      );
+    } catch (e1) {
+      // 一部の端末では枠の指定そのものが通らないことがある。
+      // その場合は枠なし（映像全体を読み取り対象）で起動し直す。
+      html5QrCode = new Html5Qrcode("reader");
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: SCAN_FPS },
+        onScanSuccess,
+        onScanFailure
+      );
+    }
 
     scanning = true;
     lastFrameTime = Date.now();
