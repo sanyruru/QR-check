@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<!-- 診断用：あえてstandaloneモードを有効にして、本番と同じ条件を再現する -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>読み取り診断ページ</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+         background: #f4f1eb; padding: 14px; color: #1a1a1a; }
+  h1 { font-size: 17px; color: #2d6a4f; margin-bottom: 4px; }
+  .sub { font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.6; }
+  .card { background: #fff; border-radius: 12px; padding: 14px;
+          border: 1px solid #e0dbd0; margin-bottom: 12px; }
+  .card h2 { font-size: 12px; letter-spacing: .1em; color: #888; margin-bottom: 10px; }
+  button { width: 100%; padding: 15px; border: none; border-radius: 10px;
+           font-size: 15px; font-weight: 700; color: #fff; background: #2d6a4f;
+           margin-bottom: 8px; -webkit-appearance: none; }
+  button.grey { background: #6b7280; }
+  button.blue { background: #1a5276; }
+  #reader { width: 100%; max-width: 380px; margin: 0 auto 10px; border-radius: 8px; overflow: hidden; }
+  .row { display: flex; justify-content: space-between; gap: 10px;
+         padding: 7px 0; border-bottom: 1px solid #eee; font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .row .k { color: #888; flex-shrink: 0; }
+  .row .v { font-family: monospace; text-align: right; word-break: break-all; }
+  .big { font-size: 20px; font-weight: 900; font-family: monospace;
+         background: #f4f1eb; border-radius: 8px; padding: 12px;
+         text-align: center; word-break: break-all; margin-bottom: 10px; }
+  .ok { color: #1b7a2b; } .ng { color: #c1121f; }
+  .log { font-size: 11px; font-family: monospace; color: #555;
+         white-space: pre-wrap; line-height: 1.6; max-height: 220px; overflow-y: auto; }
+</style>
+</head>
+<body>
+
+<h1>読み取り診断ページ</h1>
+<div class="sub">
+  このページは原因を調べるためだけのものです。<br>
+  記録は一切残らないので、何を読んでも安全です。
+</div>
+
+<div class="card">
+  <h2>① カメラで読み取ってみる</h2>
+  <div id="reader"></div>
+  <button id="btn" onclick="toggle()">📷 スキャン開始</button>
+  <button class="grey" onclick="clearLog()">記録を消す</button>
+</div>
+
+<div class="card">
+  <h2>② 読み取った中身</h2>
+  <div class="big" id="last">まだ読んでいません</div>
+  <div class="row"><span class="k">文字数</span><span class="v" id="len">-</span></div>
+  <div class="row"><span class="k">名札QRとして認識</span><span class="v" id="ismfr">-</span></div>
+  <div class="row"><span class="k">先頭7文字のコード</span><span class="v" id="codes">-</span></div>
+</div>
+
+<div class="card">
+  <h2>③ サーバー接続テスト</h2>
+  <button class="blue" onclick="testGas()">サーバーに接続してみる</button>
+  <div class="row"><span class="k">結果</span><span class="v" id="gas">未実行</span></div>
+</div>
+
+<div class="card">
+  <h2>④ 読み取りの記録</h2>
+  <div class="log" id="log">（ここに読み取るたび1行ずつ出ます）</div>
+</div>
+
+<div class="card">
+  <h2>⑤ 端末の情報</h2>
+  <div class="row"><span class="k">映像サイズ</span><span class="v" id="vsize">-</span></div>
+  <div class="row"><span class="k">表示モード</span><span class="v" id="mode">-</span></div>
+  <div class="row"><span class="k">音の状態</span><span class="v" id="audio">-</span></div>
+  <div class="row"><span class="k">画面幅</span><span class="v" id="sw">-</span></div>
+  <div class="row"><span class="k">ブラウザ</span><span class="v" id="ua" style="font-size:10px;">-</span></div>
+</div>
+
+<script>
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyxKWJOx2mx-QHJvN65s0EiXTXPBichqI5QaMST_RA1VDQ__RR9I35d1sOl60eAFmiP3A/exec';
+
+let qr = null, scanning = false, count = 0;
+const $ = id => document.getElementById(id);
+
+$('sw').textContent = window.innerWidth + ' x ' + window.innerHeight;
+$('ua').textContent = navigator.userAgent;
+(function () {
+  const standalone = window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  $('mode').textContent = standalone
+    ? 'ホーム画面アプリ（standalone）'
+    : 'ブラウザ表示';
+})();
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString('ja-JP');
+  const el = $('log');
+  if (el.textContent.startsWith('（')) el.textContent = '';
+  el.textContent = `[${t}] ${msg}\n` + el.textContent;
+}
+function clearLog() { $('log').textContent = '（ここに読み取るたび1行ずつ出ます）'; }
+
+function beepOnce() {
+  try {
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) { $('audio').textContent = '× この端末では音を使えません'; return; }
+    const ctx = new C();
+    if (ctx.state === 'suspended') ctx.resume();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'square'; o.frequency.value = 1000; g.gain.value = 0.2;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.08);
+    $('audio').textContent = '状態: ' + ctx.state;
+  } catch (e) {
+    $('audio').textContent = '× エラー: ' + e;
+    log('音を鳴らせませんでした: ' + e);
+  }
+}
+
+function show(text) {
+  count++;
+  beepOnce();
+  $('last').textContent = text;
+  $('len').textContent = text.length + ' 文字';
+  const isMfr = /^MFR:/i.test(text.trim());
+  $('ismfr').textContent = isMfr ? '○ 名札QRです' : '× 名札QRではない';
+  $('ismfr').className = 'v ' + (isMfr ? 'ok' : 'ng');
+  $('codes').textContent = Array.from(text.slice(0, 7))
+    .map(c => c.charCodeAt(0)).join(' ');
+  log(`${count}回目：「${text}」`);
+}
+
+function calcQrbox(w, h) {
+  const shorter = Math.min(w || 0, h || 0);
+  let s = Math.floor(shorter * 0.8);
+  if (!s || s < 0) s = 150;
+  s = Math.min(s, 250);
+  s = Math.max(s, 120);
+  $('vsize').textContent = (w || '?') + ' x ' + (h || '?') + '（枠 ' + s + 'px）';
+  return { width: s, height: s };
+}
+
+async function toggle() {
+  if (scanning) {
+    try { await qr.stop(); await qr.clear(); } catch (e) {}
+    scanning = false;
+    $('btn').textContent = '📷 スキャン開始';
+    log('スキャンを止めました');
+    return;
+  }
+  beepOnce();
+  qr = new Html5Qrcode('reader');
+  try {
+    await qr.start({ facingMode: 'environment' },
+      { fps: 15, qrbox: calcQrbox },
+      text => show(text),
+      () => {});
+    scanning = true;
+    $('btn').textContent = '⏹ スキャン停止';
+    log('カメラを起動しました');
+  } catch (e1) {
+    log('枠ありで起動できず: ' + e1);
+    try {
+      qr = new Html5Qrcode('reader');
+      await qr.start({ facingMode: 'environment' }, { fps: 15 },
+        text => show(text), () => {});
+      scanning = true;
+      $('btn').textContent = '⏹ スキャン停止';
+      log('枠なしで起動しました（こちらなら動きます）');
+    } catch (e2) {
+      log('カメラを起動できませんでした: ' + e2);
+      alert('カメラを起動できませんでした：' + e2);
+    }
+  }
+}
+
+async function testGas() {
+  $('gas').textContent = '接続中...';
+  try {
+    const r = await fetch(GAS_URL + '?action=get_session');
+    const j = await r.json();
+    $('gas').textContent = '○ 接続できました';
+    $('gas').className = 'v ok';
+    log('サーバー応答: ' + JSON.stringify(j).slice(0, 200));
+  } catch (e) {
+    $('gas').textContent = '× 接続できません';
+    $('gas').className = 'v ng';
+    log('サーバー接続エラー: ' + e);
+  }
+}
+</script>
+</body>
+</html>
