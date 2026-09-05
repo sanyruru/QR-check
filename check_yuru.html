@@ -22,7 +22,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<!-- iPhoneでホーム画面に追加したとき、専用モード（standalone）で開くと
+     カメラの読み取りや効果音が正常に動かないため、この指定はあえて外している。
+     アイコンから開いてもSafariと同じ動作になる（上下にバーが出るが確実に動く）。
+     <meta name="apple-mobile-web-app-capable" content="yes">  ← 復活させないこと
+     ※Androidは standalone でも問題なく動くため、上の指定は残している。 -->
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -595,7 +599,7 @@ function computeAmount(code) {
      URL（.../exec で終わるもの）に書き換えてください。
      空欄のままなら何もせず無視されます。
 ───────────────────────────────────────── */
-const GAS_URL = 'https://script.google.com/macros/s/AKfycby9rd6uPUKem7EfJFwGdWH17PVBJ8gJTNzkVsrFZh1H6khwLQ0RtjnZF_cb0812iE6nJw/exec'; // 例: 'https://script.google.com/macros/s/xxxxx/exec'
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyxKWJOx2mx-QHJvN65s0EiXTXPBichqI5QaMST_RA1VDQ__RR9I35d1sOl60eAFmiP3A/exec'; // 例: 'https://script.google.com/macros/s/xxxxx/exec'
 
 function logToSheet(ingredientName, ingredientCode, result, ingredientAmount) {
   if (!GAS_URL) return; // 未設定なら何もしない
@@ -1714,7 +1718,7 @@ renderWait = function () {
    ★★★ 直したら APP_VERSION も必ず新しくすること ★★★
    このすぐ下の行です。変え忘れると現場の端末が更新されません。
    ══════════════════════════════════════════════════════ */
-const APP_VERSION = 'v3.4 (2026-08-18)';
+const APP_VERSION = 'v3.7 (2026-08-28)';
 
 /* ─── 版数の表示 ───────────────────────────────────────
    端末が古いページをキャッシュしていないか、目で確かめるための表示。 */
